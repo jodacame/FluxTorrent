@@ -19,9 +19,10 @@ var (
 // StreamReader is a seekable, Range-friendly reader over one torrent file.
 type StreamReader struct {
 	io.ReadSeeker
-	Name   string
-	Length int64
-	closer func()
+	Name    string
+	Length  int64
+	ModTime time.Time
+	closer  func()
 }
 
 // Close releases the reader and applies drop-after-playback policy.
@@ -91,6 +92,7 @@ func (e *Engine) OpenStream(ctx context.Context, hash string, index int, reqStar
 		ReadSeeker: r,
 		Name:       file.DisplayPath(),
 		Length:     file.Length(),
+		ModTime:    m.addedAt,
 		closer: func() {
 			m.removeClient(clientID)
 			e.closeReader(m, r)
@@ -136,6 +138,12 @@ func (e *Engine) waitFirstByte(ctx context.Context, m *managed, r torrent.Reader
 
 func (e *Engine) closeReader(m *managed, r torrent.Reader) {
 	_ = r.Close()
+	e.releaseReader(m)
+}
+
+// releaseReader undoes one reader registration: shared by torrent readers and
+// the direct-from-disk path so drop-after-playback/keepSeed logic sees both.
+func (e *Engine) releaseReader(m *managed) {
 	m.mu.Lock()
 	if m.readers > 0 {
 		m.readers--

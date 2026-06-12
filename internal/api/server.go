@@ -4,10 +4,13 @@ package api
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -61,7 +64,11 @@ func (s *Server) Handler() http.Handler {
 	// Root handler: Stremio streaming-server compat (root-level paths) → SPA.
 	mux.Handle("/", s.rootHandler())
 
-	return s.withAuth(s.withCORS(mux))
+	h := s.withAuth(s.withCORS(mux))
+	if httpLogOn {
+		h = s.withLogging(h) // FT_HTTP_LOG=1 — per-request logging for debugging clients
+	}
+	return h
 }
 
 // --- middleware ---
@@ -170,6 +177,27 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, hash string
 	reqStart := parseRangeStart(r.Header.Get("Range"))
 
 	client := engine.StreamClient{Addr: clientAddr(r), Agent: r.UserAgent()}
+
+	// Fully downloaded files go straight from disk via http.ServeFile (kernel
+	// sendfile) — byte-identical to a plain static file server. The torrent
+	// reader below only serves data still being downloaded.
+	if path, done, ok := s.eng.OpenDiskFile(r.Context(), hash, index, client); ok {
+		defer done()
+		if httpLogOn {
+			log.Printf("stream: disk-serve %s idx=%d → %s", hash[:8], index, filepath.Base(path))
+		}
+		h := w.Header()
+		if ct := mediaContentType(path); ct != "" {
+			h.Set("Content-Type", ct)
+		}
+		h.Set("Connection", "close")
+		h.Set("Server", "FluxTorrent")
+		h.Set("transferMode.dlna.org", "Streaming")
+		h.Set("ETag", `"`+hex.EncodeToString([]byte(hash+"/"+filepath.Base(path)))+`"`)
+		http.ServeFile(w, r, path)
+		return
+	}
+
 	sr, err := s.eng.OpenStream(r.Context(), hash, index, reqStart, client)
 	if err != nil {
 		switch {
@@ -184,7 +212,63 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, hash string
 	}
 	defer sr.Close()
 
-	http.ServeContent(w, r, sr.Name, time.Time{}, sr.ReadSeeker)
+	h := w.Header()
+	// Correct media MIME by extension before ServeContent (which only sniffs when
+	// Content-Type is unset). Go's sniffer mislabels Matroska as `video/webm`,
+	// making players reject non-WebM codecs (HEVC/x264 in MKV). TorrServer maps
+	// explicitly too.
+	if ct := mediaContentType(sr.Name); ct != "" {
+		h.Set("Content-Type", ct)
+	}
+	// Match TorrServer's streaming response so the same players behave the same:
+	// `Connection: close` gives each Range request a clean connection (ffmpeg/mpv
+	// reuse a keep-alive mid-body connection badly when seeking); the DLNA/Server
+	// hints mark it as a streaming source.
+	h.Set("Connection", "close")
+	h.Set("Server", "FluxTorrent")
+	h.Set("transferMode.dlna.org", "Streaming")
+	// Strong ETag (hash/path, hex) exactly like TorrServer — lets players that
+	// correlate Range connections to one resource see the same identity.
+	h.Set("ETag", `"`+hex.EncodeToString([]byte(hash+"/"+sr.Name))+`"`)
+
+	http.ServeContent(w, r, sr.Name, sr.ModTime, sr.ReadSeeker)
+}
+
+// mediaContentType returns the MIME type for a media/subtitle file by extension,
+// or "" to let net/http decide.
+func mediaContentType(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".mkv":
+		return "video/x-matroska"
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".avi":
+		return "video/x-msvideo"
+	case ".mov":
+		return "video/quicktime"
+	case ".webm":
+		return "video/webm"
+	case ".ts", ".m2ts", ".mts":
+		return "video/mp2t"
+	case ".wmv":
+		return "video/x-ms-wmv"
+	case ".flv":
+		return "video/x-flv"
+	case ".mpg", ".mpeg":
+		return "video/mpeg"
+	case ".ogv":
+		return "video/ogg"
+	case ".srt":
+		return "application/x-subrip"
+	case ".ass", ".ssa":
+		return "text/x-ssa"
+	case ".vtt":
+		return "text/vtt"
+	case ".sub":
+		return "text/plain; charset=utf-8"
+	default:
+		return ""
+	}
 }
 
 // --- settings & rules ---
