@@ -335,7 +335,7 @@ func (s *Server) broadcastLoop() {
 // --- helpers ---
 
 // Version is set at build time via -ldflags, defaults below.
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 // clientAddr returns the player's source address, honoring X-Forwarded-For when
 // FluxTorrent sits behind a reverse proxy.
