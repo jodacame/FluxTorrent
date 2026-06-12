@@ -1,0 +1,23 @@
+services:
+  fluxtorrent:
+    build: .
+    image: fluxtorrent:latest
+    container_name: fluxtorrent
+    ports:
+      - "7001:7001"        # API + UI + stream (bound 0.0.0.0)
+      - "42069:42069"      # BT (optional, for incoming peers)
+    volumes:
+      - ./config:/config         # bbolt db + settings
+      - ./downloads:/downloads   # disk-cache mode only
+    environment:
+      - FT_LISTEN_HOST=0.0.0.0
+      - FT_LISTEN_PORT=7001
+      - FT_CACHE_MODE=ram
+      - FT_CACHE_SIZE_MB=1024
+      - FT_API_TOKEN=            # optional bearer token
+    restart: unless-stopped
+    # ultra-light service: small image, low idle RAM, restarts cleanly
+    deploy:
+      resources:
+        limits:
+          memory: 1536M          # headroom over FT_CACHE_SIZE_MB in RAM mode

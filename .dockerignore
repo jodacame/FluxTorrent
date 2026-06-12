@@ -1,0 +1,9 @@
+.git
+web/node_modules
+web/dist
+config
+downloads
+*.db
+/fluxtorrent
+.idea
+.vscode

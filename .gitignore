@@ -1,0 +1,30 @@
+# Go
+/fluxtorrent
+*.test
+*.out
+
+# Node / Vite
+web/node_modules/
+web/.vite/
+
+# Built UI is embedded at build time (Docker rebuilds it). Keep the dir present
+# for go:embed via .gitkeep, but ignore the generated build artifacts.
+web/dist/*
+!web/dist/.gitkeep
+
+# Runtime data
+/config/
+/downloads/
+*.db
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# TS build info
+web/tsconfig.tsbuildinfo
+
+# SPEC is internal, not tracked
+SPEC.md
