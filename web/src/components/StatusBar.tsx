@@ -1,6 +1,12 @@
-import { ArrowDown, ArrowUp, Heart } from "lucide-react";
-import { fmtSpeed } from "@/util";
+import { ArrowDown, ArrowUp, Heart, HardDrive } from "lucide-react";
+import { fmtSize, fmtSpeed } from "@/util";
 import { useI18n } from "@/i18n";
+
+export interface DiskInfo {
+  available: boolean;
+  totalBytes?: number;
+  freeBytes?: number;
+}
 
 const REPO = "https://github.com/jodacame/fluxtorrent";
 const SPONSOR = "https://github.com/sponsors/jodacame";
@@ -19,11 +25,13 @@ export function StatusBar({
   down,
   up,
   version,
+  disk,
 }: {
   count: number;
   down: number;
   up: number;
   version: string;
+  disk?: DiskInfo;
 }) {
   const { t } = useI18n();
   return (
@@ -54,7 +62,21 @@ export function StatusBar({
         Sponsor
       </a>
 
-      <span className="ml-auto flex items-center gap-1 tabular text-emerald-400">
+      {disk?.available && (
+        <span
+          className="ml-auto flex items-center gap-1.5 tabular"
+          title={t("status.diskFree", {
+            free: fmtSize(disk.freeBytes ?? 0),
+            total: fmtSize(disk.totalBytes ?? 0),
+          })}
+        >
+          <HardDrive className="size-3" />
+          <span>{fmtSize(disk.freeBytes ?? 0)}</span>
+          <span className="text-muted-foreground/60">/ {fmtSize(disk.totalBytes ?? 0)}</span>
+        </span>
+      )}
+
+      <span className={`${disk?.available ? "" : "ml-auto"} flex items-center gap-1 tabular text-emerald-400`}>
         <ArrowDown className="size-3" /> {fmtSpeed(down)}
       </span>
       <span className="flex items-center gap-1 tabular text-sky-400">

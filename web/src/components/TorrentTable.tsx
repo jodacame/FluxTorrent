@@ -1,6 +1,6 @@
 import { Waves, Recycle, Play, Link2, Pause, Trash2, Eye, Lock } from "lucide-react";
 import { type TorrentInfo } from "@/api";
-import { fmtSize, fmtSpeed, friendlyAgent, hostOf, shortName, stateView } from "@/util";
+import { fmtMins, fmtSize, fmtSpeed, friendlyAgent, hostOf, shortName, stateView } from "@/util";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -28,6 +28,22 @@ const TONE: Record<string, string> = {
   warn: "bg-amber-400 shadow-amber-400",
   idle: "bg-zinc-500 shadow-zinc-500",
 };
+
+// seedLeft describes how long until a torrent stops being shared. The seed
+// clock only starts once the download reaches 100%, and a torrent may be bound
+// by a time target, a ratio target, both, or neither.
+//   key === null → render "—" (no time-based sharing obligation)
+type SeedLeft = { key: string; label?: string } | { value: string };
+function seedLeft(x: TorrentInfo): SeedLeft | null {
+  if (x.kind !== "seeding") return null;
+  if (x.seedTargetMinutes <= 0) {
+    return x.seedTargetRatio > 0 ? { key: "seed.byRatio" } : null;
+  }
+  if (x.stats.progress < 0.999) return { key: "seed.pending" };
+  const remaining = Math.max(0, x.seedTargetMinutes - x.seedElapsedMin);
+  if (remaining === 0) return { key: "seed.done" };
+  return { value: fmtMins(remaining) };
+}
 
 export function TorrentTable({
   torrents,
@@ -61,12 +77,14 @@ export function TorrentTable({
       <Table className="text-[13px]">
         <TableHeader className="sticky top-0 z-10 bg-card">
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[34%]">{t("col.name")}</TableHead>
+            <TableHead className="w-[30%]">{t("col.name")}</TableHead>
             <TableHead className="w-[120px]">{t("col.mode")}</TableHead>
-            <TableHead className="w-[180px]">{t("col.progress")}</TableHead>
+            <TableHead className="w-[160px]">{t("col.progress")}</TableHead>
             <TableHead className="text-right">{t("col.size")}</TableHead>
             <TableHead className="text-right">{t("col.down")}</TableHead>
             <TableHead className="text-right">{t("col.up")}</TableHead>
+            <TableHead className="text-right">{t("col.shared")}</TableHead>
+            <TableHead className="text-right">{t("col.seedLeft")}</TableHead>
             <TableHead className="text-right">{t("col.peers")}</TableHead>
             <TableHead className="text-right">{t("col.ratio")}</TableHead>
           </TableRow>
@@ -76,6 +94,7 @@ export function TorrentTable({
             const sv = stateView(x.stats.state);
             const pct = Math.round(x.stats.progress * 100);
             const isSeed = x.kind === "seeding";
+            const left = seedLeft(x);
             return (
               <ContextMenu key={x.hash}>
                 <ContextMenuTrigger asChild>
@@ -129,6 +148,18 @@ export function TorrentTable({
                     <TableCell className="text-right tabular text-muted-foreground">{fmtSize(x.sizeBytes)}</TableCell>
                     <TableCell className="text-right tabular text-emerald-400/90">{fmtSpeed(x.stats.downKbps)}</TableCell>
                     <TableCell className="text-right tabular text-sky-400/80">{fmtSpeed(x.stats.upKbps)}</TableCell>
+                    <TableCell className="text-right tabular text-sky-400/80">
+                      {x.stats.uploadedBytes > 0 ? fmtSize(x.stats.uploadedBytes) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular text-muted-foreground">
+                      {left == null ? (
+                        "—"
+                      ) : "value" in left ? (
+                        <span className="text-emerald-400/90">{left.value}</span>
+                      ) : (
+                        <span className="text-xs">{t(left.key)}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular text-muted-foreground">
                       {x.stats.seeders}/{x.stats.peers}
                     </TableCell>

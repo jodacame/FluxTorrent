@@ -48,6 +48,8 @@ export const en: Dict = {
   "status.torrents": "{n} torrents",
   "status.down": "Down",
   "status.up": "Up",
+  "status.disk": "Disk",
+  "status.diskFree": "{free} free of {total}",
 
   // table columns
   "col.name": "Name",
@@ -59,6 +61,11 @@ export const en: Dict = {
   "col.peers": "Peers",
   "col.ratio": "Ratio",
   "col.mode": "Mode",
+  "col.shared": "Shared",
+  "col.seedLeft": "Left",
+  "seed.pending": "pending",
+  "seed.byRatio": "by ratio",
+  "seed.done": "finishing",
 
   // detail panel
   "detail.none": "Select a torrent to see details",

@@ -45,6 +45,15 @@ export function fmtSpeed(kbps: number): string {
   return `${Math.round((kbps / 8))} KB/s`;
 }
 
+// fmtMins turns a minute count into a compact "Xh Ym" / "Ym" / "<1m" label.
+export function fmtMins(mins: number): string {
+  if (mins <= 0) return "<1m";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
 export function shortName(name: string): string {
   return name.replace(/\.(mkv|mp4|avi|m4v|ts|webm|mov)$/i, "");
 }

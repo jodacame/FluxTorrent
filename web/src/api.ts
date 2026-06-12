@@ -16,6 +16,7 @@ export interface Stats {
   cacheFillMB: number;
   state: string;
   ratio: number;
+  uploadedBytes: number;
 }
 
 export interface StreamClient {

@@ -26,7 +26,7 @@ import { TorrentTable } from "@/components/TorrentTable";
 import { DetailPanel } from "@/components/DetailPanel";
 import { RulesEditor } from "@/components/RulesEditor";
 import { SettingsView } from "@/components/SettingsView";
-import { StatusBar } from "@/components/StatusBar";
+import { StatusBar, type DiskInfo } from "@/components/StatusBar";
 
 export type View = "library" | "rules" | "settings";
 
@@ -39,6 +39,7 @@ export default function App() {
   const [link, setLink] = useState("");
   const [adding, setAdding] = useState(false);
   const [version, setVersion] = useState("");
+  const [disk, setDisk] = useState<DiskInfo | undefined>();
 
   // persist panel layouts across reloads (localStorage)
   const hLayout = useDefaultLayout({ id: "ft-layout-h", storage: localStorage });
@@ -59,6 +60,14 @@ export default function App() {
     });
     return off;
   }, [ingest]);
+
+  // Disk usage refreshes on a slow cadence — free space changes gradually.
+  useEffect(() => {
+    const pull = () => api.disk().then(setDisk).catch(() => {});
+    pull();
+    const id = setInterval(pull, 15000);
+    return () => clearInterval(id);
+  }, []);
 
   const add = async () => {
     const v = link.trim();
@@ -209,7 +218,7 @@ export default function App() {
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      <StatusBar count={totals.count} down={totals.down} up={totals.up} version={version} />
+      <StatusBar count={totals.count} down={totals.down} up={totals.up} version={version} disk={disk} />
     </div>
   );
 }

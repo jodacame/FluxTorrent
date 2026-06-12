@@ -62,6 +62,9 @@ type Stats struct {
 	CacheFillMB int     `json:"cacheFillMB"`
 	State       string  `json:"state"`
 	Ratio       float64 `json:"ratio"`
+	// UploadedBytes is the total shared (uploaded) so far, including bytes
+	// accumulated in previous runs (persisted for keepSeed accounting).
+	UploadedBytes int64 `json:"uploadedBytes"`
 }
 
 // Info is the list-view of a torrent (SPEC §7 GET /api/torrents).
@@ -576,6 +579,7 @@ func (e *Engine) statsOf(m *managed) Stats {
 	}
 	dk, uk := m.downKbps, m.upKbps
 	readers := m.readers
+	baseUp := m.baseUp
 	m.mu.Unlock()
 
 	var progress float64
@@ -610,6 +614,7 @@ func (e *Engine) statsOf(m *managed) Stats {
 		Peers: ts.ActivePeers, Seeders: ts.ConnectedSeeders,
 		DownKbps: dk, UpKbps: uk, Progress: progress,
 		CacheFillMB: cacheFill, State: state, Ratio: ratio,
+		UploadedBytes: baseUp + up,
 	}
 }
 
