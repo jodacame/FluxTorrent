@@ -19,6 +19,28 @@ APIs your clients already speak** (TorrServer, Stremio, torrent2http).
 
 ---
 
+## Table of contents
+
+- [What is it?](#what-is-it)
+- [Private-first](#-private-first)
+- [Features](#features)
+- [How it compares](#how-it-compares)
+- [Quick start (Docker)](#-quick-start-docker-recommended)
+- [Configuration](#configuration)
+- [Per-source rules](#per-source-rules)
+- [Compatibility](#compatibility)
+- [API](#api)
+- [Building from source](#building-from-source)
+- [Tech stack](#tech-stack)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
+- [Disclaimer](#disclaimer)
+- [Built with AI](#built-with-ai)
+
+---
+
 ## What is it?
 
 FluxTorrent does exactly one job and does it well: it turns a **torrent into a seekable
@@ -307,3 +329,19 @@ ensuring your use complies with all applicable laws, regulations, and the rules 
 or network you connect to. Downloading or sharing copyrighted material without authorization may
 be illegal in your jurisdiction. Use FluxTorrent only with content you have the right to access
 and distribute. By using the software you accept full responsibility for your usage.
+
+## Built with AI
+
+FluxTorrent was built **100% with AI, under human supervision** — an experiment in modern,
+AI-native software development.
+
+A human set the direction, made the product and architecture decisions, reviewed every change
+and validated the result; an AI agent did the implementation — engine, compatibility layers,
+UI, tests, Docker and CI — iterating from a written specification and continuous feedback. Each
+feature was verified end-to-end (real torrents, real streaming, live screenshots) before being
+accepted.
+
+This is a deliberate showcase of where software development is heading: humans steering intent,
+taste and judgment; AI handling the implementation at speed. The code is meant to be read,
+audited and improved like any other — the workflow that produced it just happens to be new.
+
