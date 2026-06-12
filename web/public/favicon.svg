@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="ft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6aa6ff"/>
+      <stop offset="1" stop-color="#3f7fe0"/>
+    </linearGradient>
+  </defs>
+  <!-- app tile -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#ft)"/>
+  <!-- flux: torrent pieces streaming in -->
+  <g fill="#ffffff">
+    <rect x="13" y="20.4" width="7"  height="3.6" rx="1.8" opacity="0.4"/>
+    <rect x="13" y="30.2" width="11" height="3.6" rx="1.8" opacity="0.62"/>
+    <rect x="13" y="40.0" width="9"  height="3.6" rx="1.8" opacity="0.45"/>
+  </g>
+  <!-- play: the seekable stream out -->
+  <polygon points="31,19 51,32 31,45" fill="#ffffff" stroke="#ffffff" stroke-width="5" stroke-linejoin="round"/>
+</svg>
