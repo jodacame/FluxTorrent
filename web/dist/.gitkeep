@@ -1,0 +1,1 @@
+UI build output goes here (embedded via go:embed). Run `npm run build` in web/ or build the Docker image.
