@@ -238,6 +238,7 @@ func tsObject(info engine.Info) map[string]any {
 		"download_speed":    info.Stats.DownKbps * 1000 / 8,
 		"upload_speed":      info.Stats.UpKbps * 1000 / 8,
 		"active_peers":      info.Stats.Peers,
+		"total_peers":       info.Stats.Peers,
 		"connected_seeders": info.Stats.Seeders,
 		"preloaded_bytes":   int64(info.Stats.Progress * float64(info.SizeB)),
 	}

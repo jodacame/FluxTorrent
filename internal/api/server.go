@@ -173,8 +173,6 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, hash string
 	sr, err := s.eng.OpenStream(r.Context(), hash, index, reqStart, client)
 	if err != nil {
 		switch {
-		case errors.Is(err, engine.ErrConflict):
-			writeErr(w, http.StatusConflict, err.Error())
 		case errors.Is(err, engine.ErrNoPeers):
 			writeErr(w, http.StatusGatewayTimeout, "Couldn't find anyone sharing this right now. Try again or pick a different source.")
 		case errors.Is(err, engine.ErrNotFound):

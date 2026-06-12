@@ -12,7 +12,6 @@ import (
 // Streaming sentinel errors (mapped to HTTP status in the stream handler).
 var (
 	ErrNotFound = errors.New("torrent or file not found")
-	ErrConflict = errors.New("ram mode supports a single concurrent reader; use disk mode for multi-stream")
 	ErrNoPeers  = errors.New("no peers found within the timeout")
 	ErrNoMeta   = errors.New("torrent metadata not available")
 )
@@ -53,14 +52,13 @@ func (e *Engine) OpenStream(ctx context.Context, hash string, index int, reqStar
 	cfg := e.store.Get()
 	readahead := int64(cfg.Cache.ReadaheadMB) << 20
 
-	// RAM single-reader gate (SPEC §9): a second reader outside the window → conflict.
+	// Concurrent readers are allowed in every mode. Real players (AVPlayer, VLC,
+	// Infuse…) routinely open several Range connections at once — e.g. one for the
+	// MP4 `moov` atom at the tail and one for sequential playback at the head — so
+	// rejecting the second reader would break playback (and TorrServer/Stremio
+	// compatibility). The bounded RAM ring buffer still caps total memory; extra
+	// distant read heads just cause LRU eviction churn, never a hard failure.
 	m.mu.Lock()
-	if m.mode == "ram" && m.readers > 0 {
-		if abs(reqStart-m.readHead) > readahead {
-			m.mu.Unlock()
-			return nil, ErrConflict
-		}
-	}
 	m.readers++
 	m.readHead = reqStart
 	m.played = time.Now()
@@ -154,11 +152,4 @@ func (e *Engine) closeReader(m *managed, r torrent.Reader) {
 	if cfg.Seed.DropAfterPlayback && !keep && !cfg.Seed.Enabled {
 		_ = e.Drop(m.hash)
 	}
-}
-
-func abs(x int64) int64 {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
