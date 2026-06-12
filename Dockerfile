@@ -1,26 +1,31 @@
-# FluxTorrent — multi-stage build (SPEC §11):
-#   node builds the UI → go embeds it → tiny alpine runtime image.
+# FluxTorrent — multi-stage build:
+#   node builds the UI → go cross-compiles & embeds it → tiny alpine runtime.
+#
+# The UI and Go stages run on the native BUILDPLATFORM and Go cross-compiles to
+# the TARGET arch (CGO disabled, pure Go), so multi-arch images build fast
+# without QEMU emulation.
 
-# ---------- stage 1: build the React UI ----------
-FROM node:22-alpine AS ui
+# ---------- stage 1: build the React UI (native) ----------
+FROM --platform=$BUILDPLATFORM node:22-alpine AS ui
 WORKDIR /ui
 COPY web/package.json web/package-lock.json* ./
 RUN npm install
 COPY web/ ./
 RUN npm run build
 
-# ---------- stage 2: build the Go binary (UI embedded) ----------
-FROM golang:1.23-alpine AS build
-RUN apk add --no-cache git
+# ---------- stage 2: cross-compile the Go binary (UI embedded) ----------
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 # overlay the freshly built UI so go:embed picks it up
 COPY --from=ui /ui/dist ./web/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/fluxtorrent ./cmd/fluxtorrent
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/fluxtorrent ./cmd/fluxtorrent
 
-# ---------- stage 3: runtime ----------
+# ---------- stage 3: runtime (target arch) ----------
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/fluxtorrent /usr/local/bin/fluxtorrent
