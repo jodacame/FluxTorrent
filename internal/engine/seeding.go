@@ -80,8 +80,10 @@ func (e *Engine) enforceSeeding() {
 		st := m.t.Stats()
 
 		m.mu.Lock()
-		// Keep fetching the whole torrent if a restart re-added it lazily.
-		if !m.downloadAllSet {
+		// Complete the whole file for seeding ONLY while idle (no active stream).
+		// During playback the reader must keep sequential, playhead-focused
+		// priority so the player's buffer fills fast (DownloadAll would starve it).
+		if m.readers == 0 && !m.downloadAllSet {
 			m.t.DownloadAll()
 			m.downloadAllSet = true
 		}

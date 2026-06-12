@@ -26,7 +26,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -79,9 +82,11 @@ func (s *Server) tsTorrents(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		res, err := s.eng.Add(ctx, req.Link)
 		if err != nil {
+			log.Printf("torrserver add failed: link=%s err=%v", redactedLink(req.Link), err)
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
+		log.Printf("torrserver add: hash=%s name=%q files=%d", res.Hash, res.Name, len(res.Files))
 		if info, ok := s.eng.Get(res.Hash); ok {
 			writeJSON(w, http.StatusOK, tsObject(*info))
 			return
@@ -97,10 +102,24 @@ func (s *Server) tsTorrents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, tsObject(*info))
 
 	case "rem":
+		// Torrents under a seeding obligation (private auto-seed or a keepSeed
+		// rule) have their own ratio/time targets — a client "remove" must not
+		// delete them; the seed enforcer drops them once the target is met.
+		// Everything else is removed as asked.
+		if s.isSeedProtected(req.Hash) {
+			log.Printf("torrserver rem ignored: %s is seed-protected (keeps seeding)", req.Hash)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		_ = s.eng.Delete(req.Hash, false)
 		w.WriteHeader(http.StatusOK)
 
 	case "drop":
+		if s.isSeedProtected(req.Hash) {
+			log.Printf("torrserver drop ignored: %s is seed-protected (keeps seeding)", req.Hash)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		_ = s.eng.Drop(req.Hash)
 		w.WriteHeader(http.StatusOK)
 
@@ -111,6 +130,35 @@ func (s *Server) tsTorrents(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErr(w, http.StatusBadRequest, "unknown action: "+req.Action)
 	}
+}
+
+// redactedLink makes a torrent link safe to log. Indexer download URLs carry
+// apikeys in the query and magnet tracker params can embed passkeys, so only
+// the identifying part is kept: scheme://host/path for URLs, the btih for
+// magnets, and plain hashes as-is.
+func redactedLink(link string) string {
+	if strings.HasPrefix(link, "magnet:") {
+		if m := btihRe.FindString(link); m != "" {
+			return "magnet:?xt=" + m
+		}
+		return "magnet:?REDACTED"
+	}
+	if u, err := url.Parse(link); err == nil && u.Scheme != "" {
+		u.RawQuery, u.Fragment, u.User = "", "", nil
+		return u.String()
+	}
+	return link // bare infohash
+}
+
+var btihRe = regexp.MustCompile(`urn:btih:[0-9a-zA-Z]+`)
+
+// isSeedProtected reports whether the hash is an active torrent under a seeding
+// obligation — private auto-seed OR a `keepSeed` rule (both set KeepSeed). Such
+// torrents must survive a client drop/remove; the seed enforcer drops them only
+// once their configured ratio/time target is met.
+func (s *Server) isSeedProtected(hash string) bool {
+	info, ok := s.eng.Get(hash)
+	return ok && info.KeepSeed
 }
 
 // GET /stream/{name}?link={hash|magnet}&index={1-based}&play

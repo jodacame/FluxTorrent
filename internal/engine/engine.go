@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -186,6 +189,16 @@ func New(store *config.Store) (*Engine, error) {
 		RequirePreferred: cfg.Net.EncryptHeaders, // force when enabled
 	}
 
+	// Present as qBittorrent. Many private trackers whitelist specific clients and
+	// reject unknown ones (anacrolix's default identity) — this is what lets a
+	// private-tracker announce succeed and return peers, exactly like TorrServer.
+	cc.Bep20 = "-qB4390-"
+	cc.PeerID = qbittorrentPeerID()
+	cc.HTTPUserAgent = "qBittorrent/4.3.9"
+	cc.ExtendedHandshakeClientVersion = "qBittorrent/4.3.9"
+	cc.UpnpID = "qBittorrent/4.3.9"
+	cc.TotalHalfOpenConns = 500 // connect to many peers quickly
+
 	// Global rate limiters (runtime-adjustable via settings, SPEC §6.3).
 	downLimiter := rate.NewLimiter(rate.Inf, 1<<20)
 	upLimiter := rate.NewLimiter(rate.Inf, 1<<20)
@@ -279,9 +292,36 @@ func (e *Engine) storageFor(mode string) storage.ClientImpl {
 func (e *Engine) Add(ctx context.Context, link string) (*AddResult, error) {
 	cfg := e.store.Get()
 
-	spec, err := specFromLink(link)
+	var spec *torrent.TorrentSpec
+	var err error
+	if isHTTPURL(link) {
+		// .torrent download URL (e.g. Prowlarr/private trackers, which embed your
+		// passkey and don't offer magnets) — fetch and parse it (SPEC §5).
+		spec, err = specFromTorrentURL(ctx, link)
+	} else {
+		spec, err = specFromLink(link)
+	}
 	if err != nil {
 		return nil, err
+	}
+
+	// Idempotent (SPEC §5): if this torrent is already active, return it as-is —
+	// never restart its download. anacrolix keeps verifying/resuming/seeding the
+	// existing data. Re-adds (LumoraTV polling, pack episodes, restarts) are no-ops.
+	hash0 := spec.InfoHash.HexString()
+	e.mu.Lock()
+	existing, ok := e.managed[hash0]
+	e.mu.Unlock()
+	if ok && existing.t.Info() != nil {
+		info := e.infoOf(existing)
+		playable := false
+		for _, f := range info.Files {
+			if f.Playable {
+				playable = true
+				break
+			}
+		}
+		return &AddResult{Hash: info.Hash, Name: info.Name, Files: info.Files, Playable: playable}, nil
 	}
 
 	ruleList, _ := e.store.Rules()
@@ -370,12 +410,13 @@ func (e *Engine) Add(ctx context.Context, link string) (*AddResult, error) {
 		}
 	}
 
-	// keepSeed: download the whole torrent (disk mode) so the full content is
-	// available to share, not just the streamed window (SPEC §6.4).
-	if dec.KeepSeed {
-		t.DownloadAll()
-		m.downloadAllSet = true
-	}
+	// NOTE: we deliberately do NOT DownloadAll() here. While a file is streaming,
+	// the reader must drive a sequential download (like TorrServer) so the bytes
+	// just ahead of the playhead arrive fast and the player's buffer fills.
+	// DownloadAll spreads bandwidth across every piece and starves the playhead,
+	// which makes players sit forever waiting for their initial cache. For
+	// keepSeed torrents the whole file is fetched later, only while idle (see
+	// the seed enforcer).
 
 	// Per-torrent connection cap override from a rule (SPEC §6.4).
 	if dec.MaxConns > 0 {
@@ -629,6 +670,73 @@ func specFromLink(link string) (*torrent.TorrentSpec, error) {
 		}
 	}
 	return nil, fmt.Errorf("unrecognized link (expected magnet: or 40-char infohash)")
+}
+
+func isHTTPURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// qbittorrentPeerID builds a 20-byte BEP20 peer id with qBittorrent's prefix so
+// private trackers that whitelist clients accept us.
+func qbittorrentPeerID() string {
+	const prefix = "-qB4390-"
+	const chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+	b := make([]byte, 20)
+	copy(b, prefix)
+	for i := len(prefix); i < 20; i++ {
+		b[i] = chars[rand.Intn(len(chars))]
+	}
+	return string(b)
+}
+
+// specFromTorrentURL fetches a .torrent file over HTTP(S) and builds a spec from
+// it. Used for indexer/private-tracker download links (Prowlarr, Jackett, …) that
+// carry a passkey and provide no magnet. The metadata is embedded, so the torrent
+// is ready immediately (no DHT wait), and the private flag is preserved.
+func specFromTorrentURL(ctx context.Context, url string) (*torrent.TorrentSpec, error) {
+	rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Some indexers return the .torrent bytes; others 302-redirect to a magnet.
+	// Catch the magnet redirect so both kinds of indexers work.
+	var magnet string
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if req.URL.Scheme == "magnet" {
+				magnet = req.URL.String()
+				return http.ErrUseLastResponse
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequestWithContext(rctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "FluxTorrent/1.0")
+	req.Header.Set("Accept", "application/x-bittorrent, */*")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch .torrent: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if magnet != "" {
+		return torrent.TorrentSpecFromMagnetUri(magnet)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch .torrent: HTTP %d from indexer", resp.StatusCode)
+	}
+	mi, err := metainfo.Load(io.LimitReader(resp.Body, 32<<20))
+	if err != nil {
+		return nil, fmt.Errorf("parse .torrent (is the indexer link valid?): %w", err)
+	}
+	return torrent.TorrentSpecFromMetaInfo(mi), nil
 }
 
 func firstTracker(spec *torrent.TorrentSpec) string {
