@@ -114,8 +114,8 @@ export function TorrentTable({
                           {t(isSeed ? "tag.sharing" : "tag.streaming")}
                         </Badge>
                         {x.private && (
-                          <Badge variant="outline" className="gap-1 border-amber-500/40 px-1.5 font-normal text-amber-400" title={t("tag.private")}>
-                            <Lock className="size-3" />
+                          <Badge variant="outline" className="gap-1 border-amber-500/40 font-normal text-amber-400" title={t("tag.private")}>
+                            <Lock className="size-3" /> {t("tag.private")}
                           </Badge>
                         )}
                       </div>
