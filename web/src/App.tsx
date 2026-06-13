@@ -7,10 +7,12 @@ import {
   Pause,
   Trash2,
   Loader2,
+  Menu,
 } from "lucide-react";
 import { api, connectEvents, type TorrentInfo } from "./api";
 import { shortName } from "./util";
 import { useI18n } from "./i18n";
+import { useIsDesktop } from "@/hooks/use-media-query";
 import { useDefaultLayout } from "react-resizable-panels";
 import {
   ResizablePanelGroup,
@@ -21,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Sidebar, type Filter } from "@/components/Sidebar";
 import { TorrentTable } from "@/components/TorrentTable";
 import { DetailPanel } from "@/components/DetailPanel";
@@ -40,6 +43,8 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [version, setVersion] = useState("");
   const [disk, setDisk] = useState<DiskInfo | undefined>();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isDesktop = useIsDesktop();
 
   // persist panel layouts across reloads (localStorage)
   const hLayout = useDefaultLayout({ id: "ft-layout-h", storage: localStorage });
@@ -124,17 +129,91 @@ export default function App() {
     return { count: torrents.length, down, up };
   }, [torrents]);
 
+  const counts = {
+    all: torrents.length,
+    streaming: torrents.filter((x) => x.kind === "stream").length,
+    sharing: torrents.filter((x) => x.kind === "seeding").length,
+    downloading: torrents.filter((x) => x.stats.progress < 0.999).length,
+    completed: torrents.filter((x) => x.stats.progress >= 0.999).length,
+  };
+
+  const sidebar = (onNavigate?: () => void) => (
+    <Sidebar
+      view={view}
+      onView={(v) => {
+        setView(v);
+        onNavigate?.();
+      }}
+      filter={filter}
+      onFilter={(f) => {
+        setFilter(f);
+        onNavigate?.();
+      }}
+      counts={counts}
+    />
+  );
+
+  const mainView =
+    view === "rules" ? (
+      <RulesEditor />
+    ) : view === "settings" ? (
+      <SettingsView />
+    ) : isDesktop ? (
+      <ResizablePanelGroup
+        orientation="vertical"
+        defaultLayout={vLayout.defaultLayout}
+        onLayoutChanged={vLayout.onLayoutChanged}
+      >
+        <ResizablePanel id="table" defaultSize="66%" minSize="25%">
+          <TorrentTable
+            torrents={filtered}
+            selected={selected}
+            onSelect={setSelected}
+            onPlay={play}
+            onCopy={copy}
+            onDrop={(x) => api.drop(x.hash)}
+            onDelete={remove}
+          />
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+        <ResizablePanel id="detail" defaultSize="34%" minSize="0%" collapsible>
+          <DetailPanel torrent={sel} onCopy={copy} />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    ) : (
+      <TorrentTable
+        compact
+        torrents={filtered}
+        selected={selected}
+        onSelect={setSelected}
+        onPlay={play}
+        onCopy={copy}
+        onDrop={(x) => api.drop(x.hash)}
+        onDelete={remove}
+      />
+    );
+
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       {/* toolbar */}
-      <div className="flex shrink-0 items-center gap-2 border-b bg-card/60 px-3 py-2">
-        <div className="flex select-none items-center gap-1.5 pr-1 text-[15px]">
-          <span className="text-primary">◖</span>
-          <span className="font-medium">Flux<b className="text-primary">Torrent</b></span>
-        </div>
-        <Separator orientation="vertical" className="mx-1 h-6" />
+      <div className="flex shrink-0 items-center gap-2 border-b bg-card/60 px-2 py-2 sm:px-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0 lg:hidden"
+          onClick={() => setSidebarOpen(true)}
+          aria-label={t("nav.menu")}
+        >
+          <Menu className="size-5" />
+        </Button>
 
-        <div className="flex w-full max-w-md items-center gap-2">
+        <div className="flex shrink-0 select-none items-center gap-1.5 pr-1 text-[15px]">
+          <span className="text-primary">◖</span>
+          <span className="hidden font-medium sm:inline">Flux<b className="text-primary">Torrent</b></span>
+        </div>
+        <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
+
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-md">
           <div className="relative flex-1">
             <Link2 className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -145,78 +224,67 @@ export default function App() {
               className="h-8 pl-8"
             />
           </div>
-          <Button size="sm" onClick={add} disabled={adding || !link.trim()} className="h-8">
+          <Button size="sm" onClick={add} disabled={adding || !link.trim()} className="h-8 shrink-0">
             {adding ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
-            {t("add.button")}
+            <span className="hidden sm:inline">{t("add.button")}</span>
           </Button>
         </div>
 
-        <Separator orientation="vertical" className="mx-1 h-6" />
+        <Separator orientation="vertical" className="mx-1 hidden h-6 lg:block" />
 
-        <ToolbarAction label={t("menu.play")} disabled={!sel} onClick={() => sel && play(sel)} icon={Play} />
-        <ToolbarAction label={t("menu.copy")} disabled={!sel} onClick={() => sel && copy(sel)} icon={Link2} />
-        <ToolbarAction label={t("menu.drop")} disabled={!sel} onClick={() => sel && api.drop(sel.hash)} icon={Pause} />
-        <ToolbarAction label={t("menu.delete")} disabled={!sel} onClick={() => sel && remove(sel)} icon={Trash2} danger />
+        <div className="hidden items-center gap-2 lg:flex">
+          <ToolbarAction label={t("menu.play")} disabled={!sel} onClick={() => sel && play(sel)} icon={Play} />
+          <ToolbarAction label={t("menu.copy")} disabled={!sel} onClick={() => sel && copy(sel)} icon={Link2} />
+          <ToolbarAction label={t("menu.drop")} disabled={!sel} onClick={() => sel && api.drop(sel.hash)} icon={Pause} />
+          <ToolbarAction label={t("menu.delete")} disabled={!sel} onClick={() => sel && remove(sel)} icon={Trash2} danger />
+        </div>
 
-        <div className="ml-auto flex items-center gap-1.5 pr-1 text-xs text-muted-foreground">
+        <div className="ml-auto hidden items-center gap-1.5 pr-1 text-xs text-muted-foreground md:flex">
           <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px] shadow-emerald-400" />
           {t("chrome.live")}
         </div>
       </div>
 
-      {/* main split */}
-      <ResizablePanelGroup
-        orientation="horizontal"
-        className="flex-1"
-        defaultLayout={hLayout.defaultLayout}
-        onLayoutChanged={hLayout.onLayoutChanged}
+      {/* main area */}
+      {isDesktop ? (
+        <ResizablePanelGroup
+          orientation="horizontal"
+          className="flex-1"
+          defaultLayout={hLayout.defaultLayout}
+          onLayoutChanged={hLayout.onLayoutChanged}
+        >
+          <ResizablePanel id="sidebar" defaultSize="19%" minSize="14%" maxSize="28%">
+            {sidebar()}
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel id="main" defaultSize="81%">
+            {mainView}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      ) : (
+        <div className="min-h-0 flex-1">{mainView}</div>
+      )}
+
+      {/* mobile: sidebar drawer */}
+      <Sheet open={sidebarOpen && !isDesktop} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="p-0">
+          <SheetTitle className="sr-only">{t("nav.menu")}</SheetTitle>
+          {sidebar(() => setSidebarOpen(false))}
+        </SheetContent>
+      </Sheet>
+
+      {/* mobile: detail drawer (opens when a torrent is selected) */}
+      <Sheet
+        open={!isDesktop && !!sel}
+        onOpenChange={(o) => {
+          if (!o) setSelected(null);
+        }}
       >
-        <ResizablePanel id="sidebar" defaultSize="19%" minSize="14%" maxSize="28%">
-          <Sidebar
-            view={view}
-            onView={setView}
-            filter={filter}
-            onFilter={setFilter}
-            counts={{
-              all: torrents.length,
-              streaming: torrents.filter((x) => x.kind === "stream").length,
-              sharing: torrents.filter((x) => x.kind === "seeding").length,
-              downloading: torrents.filter((x) => x.stats.progress < 0.999).length,
-              completed: torrents.filter((x) => x.stats.progress >= 0.999).length,
-            }}
-          />
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel id="main" defaultSize="81%">
-          {view === "rules" ? (
-            <RulesEditor />
-          ) : view === "settings" ? (
-            <SettingsView />
-          ) : (
-            <ResizablePanelGroup
-              orientation="vertical"
-              defaultLayout={vLayout.defaultLayout}
-              onLayoutChanged={vLayout.onLayoutChanged}
-            >
-              <ResizablePanel id="table" defaultSize="66%" minSize="25%">
-                <TorrentTable
-                  torrents={filtered}
-                  selected={selected}
-                  onSelect={setSelected}
-                  onPlay={play}
-                  onCopy={copy}
-                  onDrop={(x) => api.drop(x.hash)}
-                  onDelete={remove}
-                />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel id="detail" defaultSize="34%" minSize="0%" collapsible>
-                <DetailPanel torrent={sel} onCopy={copy} />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          )}
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        <SheetContent side="bottom" className="h-[80vh] p-0">
+          <SheetTitle className="sr-only">{sel ? shortName(sel.name) : ""}</SheetTitle>
+          <DetailPanel torrent={sel} onCopy={copy} />
+        </SheetContent>
+      </Sheet>
 
       <StatusBar count={totals.count} down={totals.down} up={totals.up} version={version} disk={disk} />
     </div>

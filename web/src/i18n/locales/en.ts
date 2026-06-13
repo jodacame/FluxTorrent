@@ -5,6 +5,7 @@ export const en: Dict = {
   // chrome / nav
   "nav.library": "Library",
   "nav.settings": "Settings",
+  "nav.menu": "Menu",
   "chrome.live": "live",
   "side.active": "Active",
   "side.speed": "Speed",

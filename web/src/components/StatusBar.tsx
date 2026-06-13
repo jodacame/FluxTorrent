@@ -35,16 +35,16 @@ export function StatusBar({
 }) {
   const { t } = useI18n();
   return (
-    <div className="flex h-7 shrink-0 items-center gap-3 border-t bg-card px-3 text-xs text-muted-foreground">
-      <span>{t("status.torrents", { n: count })}</span>
+    <div className="flex h-7 shrink-0 items-center gap-2 border-t bg-card px-2 text-xs text-muted-foreground sm:gap-3 sm:px-3">
+      <span className="whitespace-nowrap">{t("status.torrents", { n: count })}</span>
 
-      <div className="mx-1 h-3.5 w-px bg-border" />
+      <div className="mx-1 hidden h-3.5 w-px bg-border sm:block" />
 
       <a
         href={REPO}
         target="_blank"
         rel="noreferrer"
-        className="flex items-center gap-1.5 transition-colors hover:text-foreground"
+        className="hidden items-center gap-1.5 transition-colors hover:text-foreground sm:flex"
         title="GitHub"
       >
         <GitHubMark className="size-3.5" />
@@ -55,7 +55,7 @@ export function StatusBar({
         href={SPONSOR}
         target="_blank"
         rel="noreferrer"
-        className="flex items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2 py-0.5 text-pink-400 transition-colors hover:bg-pink-500/20"
+        className="hidden items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2 py-0.5 text-pink-400 transition-colors hover:bg-pink-500/20 sm:flex"
         title="GitHub Sponsors"
       >
         <Heart className="size-3 fill-current" />
@@ -64,23 +64,23 @@ export function StatusBar({
 
       {disk?.available && (
         <span
-          className="ml-auto flex items-center gap-1.5 tabular"
+          className="ml-auto flex items-center gap-1.5 whitespace-nowrap tabular"
           title={t("status.diskFree", {
             free: fmtSize(disk.freeBytes ?? 0),
             total: fmtSize(disk.totalBytes ?? 0),
           })}
         >
-          <HardDrive className="size-3" />
+          <HardDrive className="size-3 shrink-0" />
           <span>{fmtSize(disk.freeBytes ?? 0)}</span>
-          <span className="text-muted-foreground/60">/ {fmtSize(disk.totalBytes ?? 0)}</span>
+          <span className="hidden text-muted-foreground/60 sm:inline">/ {fmtSize(disk.totalBytes ?? 0)}</span>
         </span>
       )}
 
-      <span className={`${disk?.available ? "" : "ml-auto"} flex items-center gap-1 tabular text-emerald-400`}>
-        <ArrowDown className="size-3" /> {fmtSpeed(down)}
+      <span className={`${disk?.available ? "" : "ml-auto"} flex items-center gap-1 whitespace-nowrap tabular text-emerald-400`}>
+        <ArrowDown className="size-3 shrink-0" /> {fmtSpeed(down)}
       </span>
-      <span className="flex items-center gap-1 tabular text-sky-400">
-        <ArrowUp className="size-3" /> {fmtSpeed(up)}
+      <span className="flex items-center gap-1 whitespace-nowrap tabular text-sky-400">
+        <ArrowUp className="size-3 shrink-0" /> {fmtSpeed(up)}
       </span>
     </div>
   );
