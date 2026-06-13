@@ -13,7 +13,9 @@ APIs your clients already speak** (TorrServer, Stremio, torrent2http).
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)](#-quick-start-docker-recommended)
 [![Sponsor](https://img.shields.io/badge/Sponsor-❤-ec4899)](https://github.com/sponsors/jodacame)
 
-![FluxTorrent UI](docs/screenshots/library.png)
+![FluxTorrent — quick tour](docs/screenshots/demo.gif)
+
+<sub>Demo library uses Creative-Commons films (Blender open movies).</sub>
 
 </div>
 
@@ -95,8 +97,12 @@ It's all configurable (or off) in **Settings → Private trackers**.
 
 |  |  |
 |---|---|
-| ![Rules](docs/screenshots/rules.png) | ![Settings](docs/screenshots/settings.png) |
+| ![Library](docs/screenshots/library.png) | ![Torrent details](docs/screenshots/detail.png) |
+| **Library** — streaming vs sharing at a glance | **Detail tabs** — files, sources, trackers, players |
+| ![Per-source rules editor](docs/screenshots/rules.png) | ![Settings](docs/screenshots/settings.png) |
 | **Per-source rules editor** | **Approachable settings** |
+| ![Trackers](docs/screenshots/trackers.png) | ![Responsive on mobile](docs/screenshots/mobile.png) |
+| **Trackers in use** (passkeys redacted) | **Responsive** — works on phones too |
 
 ## How it compares
 
