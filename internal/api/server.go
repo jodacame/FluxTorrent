@@ -170,6 +170,28 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	s.serveStream(w, r, r.PathValue("hash"), index)
 }
 
+// meterRW wraps a ResponseWriter to report bytes written to the engine, so the
+// UI can show a live per-client send (upload-to-player) speed. Wrapping the
+// writer forgoes the sendfile fast path, which is a fine trade for a LAN box.
+type meterRW struct {
+	http.ResponseWriter
+	onWrite func(n int)
+}
+
+func (w *meterRW) Write(b []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(b)
+	if n > 0 && w.onWrite != nil {
+		w.onWrite(n)
+	}
+	return n, err
+}
+
+func (w *meterRW) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // serveStream opens a Range-capable reader and streams file `index` (0-based) of
 // `hash`. Shared by the native `/stream/{hash}/{index}` route and the
 // TorrServer-compatible routes so streaming behaves identically everywhere.
@@ -181,7 +203,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, hash string
 	// Fully downloaded files go straight from disk via http.ServeFile (kernel
 	// sendfile) — byte-identical to a plain static file server. The torrent
 	// reader below only serves data still being downloaded.
-	if path, done, ok := s.eng.OpenDiskFile(r.Context(), hash, index, client); ok {
+	if path, onWrite, done, ok := s.eng.OpenDiskFile(r.Context(), hash, index, client); ok {
 		defer done()
 		if httpLogOn {
 			log.Printf("stream: disk-serve %s idx=%d → %s", hash[:8], index, filepath.Base(path))
@@ -194,7 +216,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, hash string
 		h.Set("Server", "FluxTorrent")
 		h.Set("transferMode.dlna.org", "Streaming")
 		h.Set("ETag", `"`+hex.EncodeToString([]byte(hash+"/"+filepath.Base(path)))+`"`)
-		http.ServeFile(w, r, path)
+		http.ServeFile(&meterRW{ResponseWriter: w, onWrite: onWrite}, r, path)
 		return
 	}
 
@@ -231,7 +253,7 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, hash string
 	// correlate Range connections to one resource see the same identity.
 	h.Set("ETag", `"`+hex.EncodeToString([]byte(hash+"/"+sr.Name))+`"`)
 
-	http.ServeContent(w, r, sr.Name, sr.ModTime, sr.ReadSeeker)
+	http.ServeContent(&meterRW{ResponseWriter: w, onWrite: sr.OnWrite}, r, sr.Name, sr.ModTime, sr.ReadSeeker)
 }
 
 // mediaContentType returns the MIME type for a media/subtitle file by extension,
@@ -335,7 +357,7 @@ func (s *Server) broadcastLoop() {
 // --- helpers ---
 
 // Version is set at build time via -ldflags, defaults below.
-var Version = "0.2.1"
+var Version = "0.3.0"
 
 // clientAddr returns the player's source address, honoring X-Forwarded-For when
 // FluxTorrent sits behind a reverse proxy.

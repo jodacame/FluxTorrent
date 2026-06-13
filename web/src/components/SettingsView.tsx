@@ -47,7 +47,7 @@ export function SettingsView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-1 border-b bg-card/60 px-4 py-3">
+      <div className="flex shrink-0 items-center gap-1 border-b bg-card/60 px-4 py-3">
         <h2 className="text-sm font-semibold">{t("nav.settings")}</h2>
         <HelpDialog />
         <Button size="sm" className="ml-auto" onClick={save} disabled={saving}>
@@ -55,8 +55,8 @@ export function SettingsView() {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 sm:p-6">
           <Group title={t("settings.storage")}>
             <div className="grid grid-cols-2 gap-3">
               <ModeCard

@@ -22,6 +22,7 @@ type StreamReader struct {
 	Name    string
 	Length  int64
 	ModTime time.Time
+	OnWrite func(n int) // report bytes sent to the client (for live send-rate)
 	closer  func()
 }
 
@@ -93,6 +94,7 @@ func (e *Engine) OpenStream(ctx context.Context, hash string, index int, reqStar
 		Name:       file.DisplayPath(),
 		Length:     file.Length(),
 		ModTime:    m.addedAt,
+		OnWrite:    func(n int) { m.addSent(clientID, n) },
 		closer: func() {
 			m.removeClient(clientID)
 			e.closeReader(m, r)

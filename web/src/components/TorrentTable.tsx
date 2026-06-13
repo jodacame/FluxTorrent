@@ -11,7 +11,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -28,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const TONE: Record<string, string> = {
   good: "bg-emerald-400 shadow-emerald-400",
@@ -50,6 +50,67 @@ function seedLeft(x: TorrentInfo): SeedLeft | null {
   const remaining = Math.max(0, x.seedTargetMinutes - x.seedElapsedMin);
   if (remaining === 0) return { key: "seed.done" };
   return { value: fmtMins(remaining) };
+}
+
+// ModeBadge shows the storage/seed mode (Streaming vs Sharing) as a clickable
+// chip that opens a plain-language explanation — written for non-technical users.
+function ModeBadge({ x }: { x: TorrentInfo }) {
+  const { t } = useI18n();
+  const isSeed = x.kind === "seeding";
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-normal transition-colors",
+            isSeed
+              ? "border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+              : "border-sky-500/40 text-sky-400 hover:bg-sky-500/10"
+          )}
+        >
+          {isSeed ? <Recycle className="size-3" /> : <Waves className="size-3" />}
+          {t(isSeed ? "tag.sharing" : "tag.streaming")}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent onClick={(e) => e.stopPropagation()}>
+        <div className={cn("flex items-center gap-1.5 text-sm font-medium", isSeed ? "text-emerald-400" : "text-sky-400")}>
+          {isSeed ? <Recycle className="size-3.5" /> : <Waves className="size-3.5" />}
+          {t(isSeed ? "tag.sharing" : "tag.streaming")}
+        </div>
+        <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+          {t(isSeed ? "tag.sharingInfo" : "tag.streamingInfo")}
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// PrivateBadge is the compact private-tracker marker: just the lock icon, which
+// opens a plain-language explanation popover (saves space next to the mode chip).
+function PrivateBadge() {
+  const { t } = useI18n();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          aria-label={t("tag.private")}
+          className="inline-flex size-[22px] items-center justify-center rounded-md border border-amber-500/40 text-amber-400 transition-colors hover:bg-amber-500/10"
+        >
+          <Lock className="size-3" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5 text-sm font-medium text-amber-400">
+          <Lock className="size-3.5" /> {t("tag.private")}
+        </div>
+        <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{t("tag.privateInfo")}</p>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 interface RowActions {
@@ -120,7 +181,6 @@ export function TorrentTable({
           {torrents.map((x) => {
             const sv = stateView(x.stats.state);
             const pct = Math.round(x.stats.progress * 100);
-            const isSeed = x.kind === "seeding";
             const left = seedLeft(x);
             return (
               <ContextMenu key={x.hash}>
@@ -149,21 +209,8 @@ export function TorrentTable({
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "gap-1 font-normal",
-                            isSeed ? "border-emerald-500/40 text-emerald-400" : "border-sky-500/40 text-sky-400"
-                          )}
-                        >
-                          {isSeed ? <Recycle className="size-3" /> : <Waves className="size-3" />}
-                          {t(isSeed ? "tag.sharing" : "tag.streaming")}
-                        </Badge>
-                        {x.private && (
-                          <Badge variant="outline" className="gap-1 border-amber-500/40 font-normal text-amber-400" title={t("tag.private")}>
-                            <Lock className="size-3" /> {t("tag.private")}
-                          </Badge>
-                        )}
+                        <ModeBadge x={x} />
+                        {x.private && <PrivateBadge />}
                       </div>
                     </TableCell>
                     <TableCell className="hidden xl:table-cell">
@@ -236,7 +283,6 @@ function TorrentCard({
   const { t } = useI18n();
   const sv = stateView(x.stats.state);
   const pct = Math.round(x.stats.progress * 100);
-  const isSeed = x.kind === "seeding";
   const left = seedLeft(x);
 
   return (
@@ -251,21 +297,8 @@ function TorrentCard({
           <div className="truncate text-sm font-medium">{shortName(x.name)}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span>{t(sv.key)}</span>
-            <Badge
-              variant="outline"
-              className={cn(
-                "gap-1 px-1.5 py-0 font-normal",
-                isSeed ? "border-emerald-500/40 text-emerald-400" : "border-sky-500/40 text-sky-400"
-              )}
-            >
-              {isSeed ? <Recycle className="size-3" /> : <Waves className="size-3" />}
-              {t(isSeed ? "tag.sharing" : "tag.streaming")}
-            </Badge>
-            {x.private && (
-              <Badge variant="outline" className="gap-1 px-1.5 py-0 font-normal border-amber-500/40 text-amber-400">
-                <Lock className="size-3" /> {t("tag.private")}
-              </Badge>
-            )}
+            <ModeBadge x={x} />
+            {x.private && <PrivateBadge />}
           </div>
         </div>
         <DropdownMenu>

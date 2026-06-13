@@ -10,11 +10,13 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -85,6 +87,16 @@ type Info struct {
 	SeedTargetMinutes int            `json:"seedTargetMinutes"`
 	SeedElapsedMin    int            `json:"seedElapsedMin"`
 	Clients           []StreamClient `json:"clients"`
+	Peers             []PeerInfo     `json:"peers"`    // live connected peers (SPEC §11b)
+	Trackers          []string       `json:"trackers"` // tracker hosts (passkeys redacted)
+}
+
+// PeerInfo describes one connected BitTorrent peer for the sources view.
+type PeerInfo struct {
+	Addr     string `json:"addr"`     // remote IP:port
+	Client   string `json:"client"`   // client name from the handshake (if known)
+	Seeder   bool   `json:"seeder"`   // has the complete torrent
+	DownKbps int64  `json:"downKbps"` // download rate from this peer
 }
 
 type managed struct {
@@ -117,6 +129,17 @@ type managed struct {
 	// active stream consumers (who is playing, and which file)
 	clientSeq int64
 	clients   map[int64]StreamClient
+	meters    map[int64]*clientMeter // per-client send-rate accounting
+}
+
+// clientMeter tracks bytes sent to one streaming client so the UI can show the
+// live send (upload-to-player) speed. sent is updated as the HTTP response is
+// written; the rate is sampled when the torrent info is built.
+type clientMeter struct {
+	sent     int64 // total bytes written to this client (atomic)
+	lastSent int64
+	lastAt   time.Time
+	kbps     int64
 }
 
 // StreamClient describes a player currently consuming a stream (SPEC §11b:
@@ -127,6 +150,7 @@ type StreamClient struct {
 	FileIndex int    `json:"fileIndex"` // 0-based file being streamed
 	File      string `json:"file"`      // file path
 	Since     int64  `json:"since"`     // unix start time
+	SendKbps  int64  `json:"sendKbps"`  // live send (upload-to-player) speed
 }
 
 func (m *managed) addClient(c StreamClient) int64 {
@@ -134,17 +158,31 @@ func (m *managed) addClient(c StreamClient) int64 {
 	defer m.mu.Unlock()
 	if m.clients == nil {
 		m.clients = map[int64]StreamClient{}
+		m.meters = map[int64]*clientMeter{}
 	}
 	m.clientSeq++
 	id := m.clientSeq
 	m.clients[id] = c
+	m.meters[id] = &clientMeter{lastAt: time.Now()}
 	return id
+}
+
+// addSent records bytes written to a streaming client (called from the HTTP
+// layer as the response body is sent).
+func (m *managed) addSent(id int64, n int) {
+	m.mu.Lock()
+	meter := m.meters[id]
+	m.mu.Unlock()
+	if meter != nil {
+		atomic.AddInt64(&meter.sent, int64(n))
+	}
 }
 
 func (m *managed) removeClient(id int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.clients, id)
+	delete(m.meters, id)
 }
 
 // Engine is the torrent engine façade.
@@ -540,8 +578,18 @@ func (e *Engine) infoOf(m *managed) *Info {
 	}
 
 	m.mu.Lock()
+	now := time.Now()
 	clients := make([]StreamClient, 0, len(m.clients))
-	for _, c := range m.clients {
+	for id, c := range m.clients {
+		if meter := m.meters[id]; meter != nil {
+			sent := atomic.LoadInt64(&meter.sent)
+			dt := now.Sub(meter.lastAt).Seconds()
+			if dt >= 0.5 {
+				meter.kbps = int64(float64(sent-meter.lastSent) * 8 / 1000 / dt)
+				meter.lastSent, meter.lastAt = sent, now
+			}
+			c.SendKbps = meter.kbps
+		}
 		clients = append(clients, c)
 	}
 	elapsed := 0
@@ -560,8 +608,67 @@ func (e *Engine) infoOf(m *managed) *Info {
 		Files: files, Stats: e.statsOf(m), Mode: m.mode, AddedAt: m.addedAt.Unix(),
 		Kind: kind, Private: m.private, KeepSeed: m.keepSeed,
 		SeedTargetRatio: m.sRatio, SeedTargetMinutes: m.sMinutes, SeedElapsedMin: elapsed,
-		Clients: clients,
+		Clients: clients, Peers: peersOf(m.t), Trackers: trackerHosts(m.t),
 	}
+}
+
+// peersOf snapshots the currently connected peers for the sources view.
+func peersOf(t *torrent.Torrent) []PeerInfo {
+	conns := t.PeerConns()
+	numPieces := 0
+	if t.Info() != nil {
+		numPieces = t.NumPieces()
+	}
+	out := make([]PeerInfo, 0, len(conns))
+	for _, pc := range conns {
+		name, _ := pc.PeerClientName.Load().(string)
+		seeder := false
+		if numPieces > 0 {
+			if pp := pc.PeerPieces(); pp != nil && int(pp.GetCardinality()) >= numPieces {
+				seeder = true
+			}
+		}
+		addr := ""
+		if pc.RemoteAddr != nil {
+			addr = pc.RemoteAddr.String()
+		}
+		out = append(out, PeerInfo{
+			Addr:     addr,
+			Client:   strings.TrimSpace(name),
+			Seeder:   seeder,
+			DownKbps: int64(pc.DownloadRate() * 8 / 1000),
+		})
+	}
+	return out
+}
+
+// trackerHosts returns the distinct tracker hosts (scheme://host) for a torrent.
+// Only the host is exposed — announce paths/queries can embed a private passkey.
+func trackerHosts(t *torrent.Torrent) []string {
+	mi := t.Metainfo()
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(u string) {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			return
+		}
+		host := u
+		if pu, err := url.Parse(u); err == nil && pu.Host != "" {
+			host = pu.Scheme + "://" + pu.Host
+		}
+		if !seen[host] {
+			seen[host] = true
+			out = append(out, host)
+		}
+	}
+	add(mi.Announce)
+	for _, tier := range mi.AnnounceList {
+		for _, u := range tier {
+			add(u)
+		}
+	}
+	return out
 }
 
 func (e *Engine) statsOf(m *managed) Stats {

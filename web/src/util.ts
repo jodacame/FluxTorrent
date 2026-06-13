@@ -1,3 +1,33 @@
+// copyText copies text to the clipboard. The async Clipboard API only works in
+// a secure context (HTTPS or localhost); when the app is served over plain HTTP
+// — common for a self-hosted LAN box — `navigator.clipboard` is undefined, so we
+// fall back to the classic hidden-textarea + execCommand("copy") path.
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to the legacy path below */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 // Human-friendly mappers (SPEC §11b: states as human language, not raw numbers).
 
 export interface StateView {

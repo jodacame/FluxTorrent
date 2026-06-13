@@ -25,6 +25,14 @@ export interface StreamClient {
   fileIndex: number;
   file: string;
   since: number;
+  sendKbps: number;
+}
+
+export interface PeerInfo {
+  addr: string;
+  client: string;
+  seeder: boolean;
+  downKbps: number;
 }
 
 export interface TorrentInfo {
@@ -42,6 +50,8 @@ export interface TorrentInfo {
   seedTargetMinutes: number;
   seedElapsedMin: number;
   clients: StreamClient[];
+  peers: PeerInfo[];
+  trackers: string[];
 }
 
 export interface Settings {

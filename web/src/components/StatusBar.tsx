@@ -55,7 +55,7 @@ export function StatusBar({
         href={SPONSOR}
         target="_blank"
         rel="noreferrer"
-        className="hidden items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2 py-0.5 text-pink-400 transition-colors hover:bg-pink-500/20 sm:flex"
+        className="hidden items-center gap-1 text-pink-400 transition-opacity hover:opacity-80 sm:flex"
         title="GitHub Sponsors"
       >
         <Heart className="size-3 fill-current" />

@@ -21,18 +21,18 @@ import (
 // `client` with the same bookkeeping as OpenStream (UI player list, reader
 // count for keepSeed/idle/drop logic); call done() when the response ends.
 // ok=false → caller must fall back to OpenStream.
-func (e *Engine) OpenDiskFile(ctx context.Context, hash string, index int, client StreamClient) (path string, done func(), ok bool) {
+func (e *Engine) OpenDiskFile(ctx context.Context, hash string, index int, client StreamClient) (path string, onWrite func(n int), done func(), ok bool) {
 	m, err := e.Ensure(ctx, hash)
 	if err != nil || m.t.Info() == nil {
-		return "", nil, false
+		return "", nil, nil, false
 	}
 	files := m.t.Files()
 	if index < 0 || index >= len(files) {
-		return "", nil, false
+		return "", nil, nil, false
 	}
 	f := files[index]
 	if f.Length() == 0 || f.BytesCompleted() < f.Length() {
-		return "", nil, false
+		return "", nil, nil, false
 	}
 
 	// Locate the file as written by storage.NewFile: multi-file torrents live
@@ -55,10 +55,10 @@ func (e *Engine) OpenDiskFile(ctx context.Context, hash string, index int, clien
 		client.File = f.DisplayPath()
 		client.Since = time.Now().Unix()
 		id := m.addClient(client)
-		return p, func() {
+		return p, func(n int) { m.addSent(id, n) }, func() {
 			m.removeClient(id)
 			e.releaseReader(m)
 		}, true
 	}
-	return "", nil, false
+	return "", nil, nil, false
 }

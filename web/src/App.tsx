@@ -8,9 +8,10 @@ import {
   Trash2,
   Loader2,
   Menu,
+  X,
 } from "lucide-react";
 import { api, connectEvents, type TorrentInfo } from "./api";
-import { shortName } from "./util";
+import { copyText, shortName } from "./util";
 import { useI18n } from "./i18n";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useDefaultLayout } from "react-resizable-panels";
@@ -23,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Sidebar, type Filter } from "@/components/Sidebar";
 import { TorrentTable } from "@/components/TorrentTable";
 import { DetailPanel } from "@/components/DetailPanel";
@@ -97,11 +98,12 @@ export default function App() {
     const f = x.files.find((y) => y.playable) ?? x.files[0];
     if (f) window.open(api.streamUrl(x.hash, f.index), "_blank");
   };
-  const copy = (x: TorrentInfo) => {
+  const copy = async (x: TorrentInfo) => {
     const f = x.files.find((y) => y.playable) ?? x.files[0];
     if (!f) return;
-    navigator.clipboard.writeText(api.streamUrl(x.hash, f.index));
-    toast.success(t("toast.copied"));
+    const ok = await copyText(api.streamUrl(x.hash, f.index));
+    if (ok) toast.success(t("toast.copied"));
+    else toast.error(t("toast.copyFailed"));
   };
   const remove = (x: TorrentInfo, withFiles = false) => {
     const msg = t(withFiles ? "confirm.deleteFiles" : "confirm.delete", { name: shortName(x.name) });
@@ -177,7 +179,7 @@ export default function App() {
         </ResizablePanel>
         <ResizableHandle withHandle />
         <ResizablePanel id="detail" defaultSize="34%" minSize="0%" collapsible>
-          <DetailPanel torrent={sel} onCopy={copy} />
+          <DetailPanel torrent={sel} />
         </ResizablePanel>
       </ResizablePanelGroup>
     ) : (
@@ -208,7 +210,8 @@ export default function App() {
         </Button>
 
         <div className="flex shrink-0 select-none items-center gap-1.5 pr-1 text-[15px]">
-          <span className="text-primary">◖</span>
+          <BrandMark className="size-4 text-primary" />
+          <span className="text-xs font-bold sm:hidden">F<b className="text-primary">T</b></span>
           <span className="hidden font-medium sm:inline">Flux<b className="text-primary">Torrent</b></span>
         </div>
         <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
@@ -267,9 +270,18 @@ export default function App() {
 
       {/* mobile: sidebar drawer */}
       <Sheet open={sidebarOpen && !isDesktop} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="p-0">
-          <SheetTitle className="sr-only">{t("nav.menu")}</SheetTitle>
-          {sidebar(() => setSidebarOpen(false))}
+        <SheetContent side="left" className="p-0" showCloseButton={false}>
+          <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+            <SheetTitle className="flex select-none items-center gap-1.5 text-[15px] font-medium">
+              <BrandMark className="size-4 text-primary" />
+              <span>Flux<b className="text-primary">Torrent</b></span>
+            </SheetTitle>
+            <SheetClose className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+              <X className="size-4" />
+              <span className="sr-only">{t("action.close")}</span>
+            </SheetClose>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">{sidebar(() => setSidebarOpen(false))}</div>
         </SheetContent>
       </Sheet>
 
@@ -280,14 +292,34 @@ export default function App() {
           if (!o) setSelected(null);
         }}
       >
-        <SheetContent side="bottom" className="h-[80vh] p-0">
-          <SheetTitle className="sr-only">{sel ? shortName(sel.name) : ""}</SheetTitle>
-          <DetailPanel torrent={sel} onCopy={copy} />
+        <SheetContent side="bottom" className="p-0" showCloseButton={false}>
+          <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4">
+            <SheetTitle className="truncate text-sm font-semibold">{sel ? shortName(sel.name) : ""}</SheetTitle>
+            <SheetClose className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+              <X className="size-4" />
+              <span className="sr-only">{t("action.close")}</span>
+            </SheetClose>
+          </div>
+          <div className="min-h-0 flex-1">
+            <DetailPanel torrent={sel} />
+          </div>
         </SheetContent>
       </Sheet>
 
       <StatusBar count={totals.count} down={totals.down} up={totals.up} version={version} disk={disk} />
     </div>
+  );
+}
+
+// BrandMark is the wordmark icon: the favicon's "flux" speed lines (the play
+// triangle is dropped here — the wordmark text carries the name).
+function BrandMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      <rect x="9" y="5.5" width="12" height="3" rx="1.5" opacity="0.5" />
+      <rect x="3" y="10.5" width="18" height="3" rx="1.5" />
+      <rect x="6" y="15.5" width="15" height="3" rx="1.5" opacity="0.65" />
+    </svg>
   );
 }
 
@@ -306,16 +338,21 @@ function ToolbarAction({
 }) {
   return (
     <Tooltip>
+      {/* Wrap in a span so the tooltip still shows when the button is disabled
+          (a disabled <button> emits no pointer events, so it can't be the
+          hover target itself). */}
       <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={`size-8 ${danger ? "hover:text-destructive" : ""}`}
-          disabled={disabled}
-          onClick={onClick}
-        >
-          <Icon className="size-4" />
-        </Button>
+        <span className="inline-flex">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`size-8 ${danger ? "hover:text-destructive" : ""}`}
+            disabled={disabled}
+            onClick={onClick}
+          >
+            <Icon className="size-4" />
+          </Button>
+        </span>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

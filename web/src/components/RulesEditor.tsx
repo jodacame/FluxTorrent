@@ -57,22 +57,22 @@ export function RulesEditor() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b bg-card/60 px-4 py-3">
-        <div>
+      <div className="flex shrink-0 items-center gap-3 border-b bg-card/60 px-4 py-3">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold">{t("rules.title")}</h2>
-          <p className="text-xs text-muted-foreground">{t("rules.subtitle")}</p>
+          <p className="truncate text-xs text-muted-foreground">{t("rules.subtitle")}</p>
         </div>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex shrink-0 gap-2">
           <Button variant="outline" size="sm" onClick={addRule}>
-            <Plus data-icon="inline-start" /> {t("rules.add")}
+            <Plus data-icon="inline-start" /> <span className="hidden sm:inline">{t("rules.add")}</span>
           </Button>
           <Button size="sm" onClick={save} disabled={!dirty}>
-            <Save data-icon="inline-start" /> {t("rules.save")}
+            <Save data-icon="inline-start" /> <span className="hidden sm:inline">{t("rules.save")}</span>
           </Button>
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-4">
           {rules.length === 0 && (
             <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
@@ -104,8 +104,8 @@ function RuleRow({
 
   return (
     <div className="rounded-lg border bg-card p-3">
-      <div className="flex items-center gap-2">
-        <div className="flex size-6 items-center justify-center text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="hidden size-6 items-center justify-center text-muted-foreground sm:flex">
           <GripVertical className="size-4" />
         </div>
         <span className="w-5 text-xs tabular text-muted-foreground">{index + 1}</span>
@@ -129,10 +129,10 @@ function RuleRow({
           value={rule.match.value}
           onChange={(e) => onChange({ ...rule, match: { ...rule.match, value: e.target.value } })}
           placeholder={t("rules.value")}
-          className="h-8 flex-1"
+          className="h-8 min-w-[140px] flex-1"
         />
 
-        <span className="text-muted-foreground">→</span>
+        <span className="hidden text-muted-foreground sm:inline">→</span>
 
         <Select value={rule.action} onValueChange={(v) => onChange({ ...rule, action: v as RuleAction })}>
           <SelectTrigger className="h-8 w-[150px]"><SelectValue /></SelectTrigger>
@@ -141,7 +141,7 @@ function RuleRow({
           </SelectContent>
         </Select>
 
-        <Button variant="ghost" size="icon" className="size-8 hover:text-destructive" onClick={onRemove}>
+        <Button variant="ghost" size="icon" className="size-8 shrink-0 hover:text-destructive" onClick={onRemove}>
           <Trash2 className="size-4" />
         </Button>
       </div>
@@ -149,7 +149,7 @@ function RuleRow({
       {isKeepSeed && (
         <>
           <Separator className="my-2" />
-          <div className="flex items-center gap-4 pl-10 text-[13px]">
+          <div className="flex flex-wrap items-center gap-4 pl-0 text-[13px] sm:pl-10">
             <label className="flex items-center gap-2">
               <span className="text-muted-foreground">{t("rules.ratio")}</span>
               <Input
@@ -174,7 +174,7 @@ function RuleRow({
         </>
       )}
 
-      <div className="mt-2 flex items-center gap-2 pl-10">
+      <div className="mt-2 flex flex-wrap items-center gap-2 pl-0 sm:pl-10">
         <label className="flex shrink-0 items-center gap-2 text-[13px]">
           <span className="text-muted-foreground">{t("rules.maxConns")}</span>
           <Input
