@@ -167,6 +167,14 @@ export const api = {
     fetch("/api/disk").then((r) =>
       j<{ path: string; available: boolean; totalBytes?: number; freeBytes?: number; usedBytes?: number }>(r)
     ),
+  listOrphans: () =>
+    fetch("/api/disk/orphans").then((r) =>
+      j<{ items: { name: string; sizeBytes: number }[]; totalBytes: number }>(r)
+    ),
+  cleanOrphans: () =>
+    fetch("/api/disk/orphans", { method: "DELETE" }).then((r) =>
+      j<{ removed: number; freedBytes: number }>(r)
+    ),
   streamUrl: (hash: string, index: number) =>
     `${location.origin}/stream/${hash}/${index}`,
 

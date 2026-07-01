@@ -219,6 +219,43 @@ func (e *Engine) managedOf(hash string) (*managed, bool) {
 	return m, ok
 }
 
+// OrphanInfo describes an on-disk item with no backing record and no active
+// torrent — i.e. something not shown in the listing: leftovers from before
+// retention existed, a client "rem", or a delete-without-files.
+type OrphanInfo struct {
+	Name  string `json:"name"`
+	SizeB int64  `json:"sizeBytes"`
+}
+
+// ListOrphans returns the disk-cache entries that are safe to remove on demand
+// (no record, not active). Used to preview an orphan cleanup before running it.
+func (e *Engine) ListOrphans() []OrphanInfo {
+	out := []OrphanInfo{}
+	for _, d := range e.scanDisk() {
+		if d.orphan {
+			out = append(out, OrphanInfo{Name: d.name, SizeB: d.size})
+		}
+	}
+	return out
+}
+
+// CleanOrphans deletes every orphan (see ListOrphans) and reports how many were
+// removed and the bytes freed. It never touches active/seeding content or
+// records still in the listing.
+func (e *Engine) CleanOrphans() (removed int, freed int64) {
+	for _, d := range e.scanDisk() {
+		if !d.orphan {
+			continue
+		}
+		if e.evictDiskEntry(d) {
+			removed++
+			freed += d.size
+			log.Printf("cleanup: removed orphan %s (%dMB)", d.name, d.size>>20)
+		}
+	}
+	return removed, freed
+}
+
 // entryMtime returns a path's modification time in unix seconds (0 if missing).
 func entryMtime(path string) int64 {
 	if fi, err := os.Stat(path); err == nil {

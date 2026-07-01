@@ -156,3 +156,29 @@ func TestScanDiskFindsOrphans(t *testing.T) {
 		t.Errorf("orphan entry wrong: %+v", or)
 	}
 }
+
+// TestCleanOrphans removes only untracked files, leaving records intact.
+func TestCleanOrphans(t *testing.T) {
+	root := t.TempDir()
+	e := testEngine(t, root)
+
+	_ = os.MkdirAll(filepath.Join(root, "keep"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "keep", "a.mkv"), make([]byte, 10), 0o644)
+	_ = e.store.SaveTorrent(config.TorrentRecord{Hash: "k1", Name: "keep", StorageMode: "disk"})
+	_ = os.MkdirAll(filepath.Join(root, "junk"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "junk", "b.mkv"), make([]byte, 30), 0o644)
+
+	if got := e.ListOrphans(); len(got) != 1 || got[0].Name != "junk" || got[0].SizeB != 30 {
+		t.Fatalf("ListOrphans = %+v", got)
+	}
+	removed, freed := e.CleanOrphans()
+	if removed != 1 || freed != 30 {
+		t.Errorf("CleanOrphans = (%d, %d), want (1, 30)", removed, freed)
+	}
+	if _, err := os.Stat(filepath.Join(root, "junk")); !os.IsNotExist(err) {
+		t.Error("orphan should be deleted")
+	}
+	if _, err := os.Stat(filepath.Join(root, "keep")); err != nil {
+		t.Error("tracked folder must be kept")
+	}
+}

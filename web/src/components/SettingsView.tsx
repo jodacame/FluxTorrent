@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Save, HardDrive } from "lucide-react";
+import { Save, HardDrive, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, type Settings } from "@/api";
 import { fmtSize } from "@/util";
@@ -90,6 +90,7 @@ export function SettingsView() {
               onChange={(v) => setS({ ...s, disk: { ...s.disk, deleteAfterSeed: v } })} />
             <SwitchField label={t("settings.deleteAfterPlayback")} help={t("settings.deleteAfterPlaybackHelp")} value={s.disk.deleteAfterPlayback}
               onChange={(v) => setS({ ...s, disk: { ...s.disk, deleteAfterPlayback: v } })} />
+            <OrphanCleanup />
           </Group>
 
           <Group title={t("settings.language")}>
@@ -256,6 +257,45 @@ function SwitchField({ label, help, value, onChange }: { label: string; help: st
         <p className="text-xs text-muted-foreground">{help}</p>
       </div>
       <Switch checked={value} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+// OrphanCleanup scans for on-disk files that have no torrent in the listing
+// (pre-existing leftovers, client "rem", delete-without-files) and removes them
+// on demand, after previewing how many and how much they weigh.
+function OrphanCleanup() {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const { items, totalBytes } = await api.listOrphans();
+      if (!items.length) {
+        toast.info(t("cleanup.none"));
+        return;
+      }
+      if (!confirm(t("cleanup.confirm", { count: items.length, size: fmtSize(totalBytes) }))) return;
+      const { removed, freedBytes } = await api.cleanOrphans();
+      toast.success(t("cleanup.done", { count: removed, size: fmtSize(freedBytes) }));
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <Label className="text-sm">{t("cleanup.orphans")}</Label>
+        <p className="text-xs text-muted-foreground">{t("cleanup.orphansHelp")}</p>
+      </div>
+      <Button variant="outline" size="sm" className="shrink-0" onClick={run} disabled={busy}>
+        {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Trash2 data-icon="inline-start" />}
+        {t("cleanup.scan")}
+      </Button>
     </div>
   );
 }
