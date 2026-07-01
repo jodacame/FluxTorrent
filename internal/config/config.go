@@ -62,6 +62,15 @@ type Compressed struct {
 	Reject bool `json:"reject"`
 }
 
+// Disk retention: auto-free space in disk mode by removing content once it is no
+// longer needed, and cap the disk-cache directory so it can never fill up.
+type Disk struct {
+	MaxGB               int  `json:"maxGB"`               // hard cap for the disk-cache dir; 0 = no cap
+	GraceMinutes        int  `json:"graceMinutes"`        // safety window before deleting public content (0 = immediate)
+	DeleteAfterSeed     bool `json:"deleteAfterSeed"`     // delete files once a seed ratio/time target is met
+	DeleteAfterPlayback bool `json:"deleteAfterPlayback"` // disk mode: delete leftover files after playback / idle timeout
+}
+
 // Settings is the full config object persisted in bbolt.
 type Settings struct {
 	Cache             Cache      `json:"cache"`
@@ -69,6 +78,7 @@ type Settings struct {
 	Net               Net        `json:"net"`
 	Limits            Limits     `json:"limits"`
 	Compressed        Compressed `json:"compressed"`
+	Disk              Disk       `json:"disk"`
 	NoPeersTimeoutSec int        `json:"noPeersTimeoutSec"`
 	APIToken          string     `json:"apiToken"`
 }
@@ -100,6 +110,7 @@ func Defaults() Settings {
 		Net:               Net{ListenHost: "0.0.0.0", ListenPort: 7001, BTPort: 42069, DHT: true, MaxConns: 200, DownKbps: 0, UpKbps: 0, EncryptHeaders: false, IPv6: true, UTP: true, DisconnectTimeoutSec: 0},
 		Limits:            Limits{MaxActiveTorrents: 8},
 		Compressed:        Compressed{Reject: true},
+		Disk:              Disk{MaxGB: 0, GraceMinutes: 60, DeleteAfterSeed: true, DeleteAfterPlayback: true},
 		NoPeersTimeoutSec: 60,
 		APIToken:          "",
 	}
@@ -126,6 +137,10 @@ type TorrentRecord struct {
 	SeedUntilRatio   float64 `json:"seedUntilRatio"`
 	SeedUntilMinutes int     `json:"seedUntilMinutes"`
 	SeedStartedAt    int64   `json:"seedStartedAt"`
+	// PendingDeleteAt marks public disk content slated for deletion once the
+	// grace window elapses (unix seconds; 0 = not pending). Re-adding the torrent
+	// clears it (the returning viewer resumes from the retained files).
+	PendingDeleteAt int64 `json:"pendingDeleteAt"`
 }
 
 // Store is the bbolt-backed config + state store. Safe for concurrent use.
@@ -301,6 +316,12 @@ func normalize(cfg *Settings) {
 	}
 	if cfg.NoPeersTimeoutSec < 1 {
 		cfg.NoPeersTimeoutSec = 60
+	}
+	if cfg.Disk.MaxGB < 0 {
+		cfg.Disk.MaxGB = 0
+	}
+	if cfg.Disk.GraceMinutes < 0 {
+		cfg.Disk.GraceMinutes = 0
 	}
 }
 

@@ -81,6 +81,17 @@ export function SettingsView() {
             <DiskUsage />
           </Group>
 
+          <Group title={t("settings.cleanup")}>
+            <NumField label={t("settings.diskMaxGB")} help={t("settings.diskMaxGBHelp")} value={s.disk.maxGB}
+              onChange={(v) => setS({ ...s, disk: { ...s.disk, maxGB: v } })} />
+            <NumField label={t("settings.graceMinutes")} help={t("settings.graceMinutesHelp")} value={s.disk.graceMinutes}
+              onChange={(v) => setS({ ...s, disk: { ...s.disk, graceMinutes: v } })} />
+            <SwitchField label={t("settings.deleteAfterSeed")} help={t("settings.deleteAfterSeedHelp")} value={s.disk.deleteAfterSeed}
+              onChange={(v) => setS({ ...s, disk: { ...s.disk, deleteAfterSeed: v } })} />
+            <SwitchField label={t("settings.deleteAfterPlayback")} help={t("settings.deleteAfterPlaybackHelp")} value={s.disk.deleteAfterPlayback}
+              onChange={(v) => setS({ ...s, disk: { ...s.disk, deleteAfterPlayback: v } })} />
+          </Group>
+
           <Group title={t("settings.language")}>
             <div className="flex items-center justify-between gap-4">
               <div>

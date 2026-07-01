@@ -41,8 +41,14 @@ func (e *Engine) reapIdle() {
 		return
 	}
 	cutoff := time.Now().Add(-time.Duration(timeout) * time.Second)
+	deleteLeftovers := e.store.Get().Disk.DeleteAfterPlayback
 	e.mu.Lock()
-	var drop []string
+	type idleT struct {
+		hash    string
+		disk    bool
+		private bool
+	}
+	var drop []idleT
 	for h, m := range e.managed {
 		m.mu.Lock()
 		last := m.played
@@ -50,15 +56,21 @@ func (e *Engine) reapIdle() {
 			last = m.addedAt
 		}
 		idle := m.readers == 0 && !m.keepSeed && last.Before(cutoff)
+		it := idleT{hash: h, disk: m.mode == "disk", private: m.private}
 		m.mu.Unlock()
 		if idle {
-			drop = append(drop, h)
+			drop = append(drop, it)
 		}
 	}
 	e.mu.Unlock()
-	for _, h := range drop {
-		log.Printf("disconnect-timeout: dropping idle torrent %s", h)
-		_ = e.Drop(h)
+	for _, it := range drop {
+		if it.disk && deleteLeftovers {
+			log.Printf("disconnect-timeout: retiring idle torrent %s", it.hash)
+			e.retire(it.hash, it.private)
+		} else {
+			log.Printf("disconnect-timeout: dropping idle torrent %s", it.hash)
+			_ = e.Drop(it.hash)
+		}
 	}
 }
 
@@ -112,11 +124,18 @@ func (e *Engine) enforceSeeding() {
 		if sMinutes > 0 && complete && time.Since(seedStarted) >= time.Duration(sMinutes)*time.Minute {
 			met = true
 		}
-		// Don't cut off an active viewer; drop once the target is met and idle.
+		// Don't cut off an active viewer; act once the target is met and idle.
 		if met && readers == 0 {
-			log.Printf("keepSeed target met for %s (ratio=%.2f) — dropping", m.hash, ratio)
-			e.clearKeepSeed(m.hash)
-			_ = e.Drop(m.hash)
+			if e.store.Get().Disk.DeleteAfterSeed {
+				// Free the space: private → deleted now (it managed its own
+				// window), public → kept for the grace window then removed.
+				log.Printf("keepSeed target met for %s (ratio=%.2f) — cleaning up", m.hash, ratio)
+				e.retire(m.hash, m.private)
+			} else {
+				log.Printf("keepSeed target met for %s (ratio=%.2f) — dropping", m.hash, ratio)
+				e.clearKeepSeed(m.hash)
+				_ = e.Drop(m.hash)
+			}
 		}
 	}
 }
