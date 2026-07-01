@@ -262,6 +262,7 @@ func New(store *config.Store) (*Engine, error) {
 	}
 	e.ApplyRateLimits(cfg.Net)
 	e.startSeedEnforcer() // keepSeed ratio/time enforcement (SPEC §6.4)
+	e.startJanitor()      // disk retention: auto-free space + cap (SPEC §6.1)
 	return e, nil
 }
 
@@ -756,8 +757,9 @@ func (e *Engine) Delete(hash string, withFiles bool) error {
 	_ = e.store.DeleteTorrent(hash)
 
 	if withFiles && found && rec.StorageMode == "disk" {
-		cfg := e.store.Get()
-		_ = os.RemoveAll(filepath.Join(cfg.Cache.Path, rec.Name))
+		if path, ok := e.safeDataPath(rec.Name); ok {
+			_ = os.RemoveAll(path)
+		}
 	}
 	return nil
 }

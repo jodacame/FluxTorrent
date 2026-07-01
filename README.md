@@ -244,6 +244,26 @@ environment:
 > Going public? Always put it behind **TLS** (a reverse proxy) so the session cookie is
 > `Secure`, and prefer a **VPN** when you can. See [Security](#security).
 
+### Disk cleanup (disk mode)
+
+In **RAM mode** nothing is written to disk, so there's nothing to clean. In **disk mode**
+FluxTorrent frees space automatically so `/downloads` never fills up. Tune it in the
+**Settings → Disk cleanup** screen:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Disk limit (GB)** | `0` = off | Hard cap for the download folder. When exceeded, the **oldest unused** content is deleted first until back under the cap. |
+| **Safety window (min)** | `60` | After content is no longer needed it's kept this long before deletion, so replaying it **resumes without re-downloading**. |
+| **Delete after sharing** | `on` | Free the files once a torrent meets its seed **ratio/time** target. |
+| **Delete after watching** | `on` | Remove leftover files after you finish watching or a torrent goes idle. |
+
+**What is kept:** anything **being watched right now** or **still seeding toward a live
+target** is never touched. **Private torrents** manage their own ratio/time window, so they're
+deleted **immediately** when it's met (no safety window). Everything else is retired: dropped
+from the active set, kept for the safety window (so a returning viewer resumes instantly), then
+deleted. The disk cap is a hard guarantee — under pressure it evicts the oldest content first,
+overriding the safety window.
+
 ### Per-source rules
 
 Rules are evaluated **in order, first match wins** (edit them in the **Rules** screen):

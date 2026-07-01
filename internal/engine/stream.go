@@ -158,8 +158,21 @@ func (e *Engine) releaseReader(m *managed) {
 		return
 	}
 	cfg := e.store.Get()
-	// Drop-after-playback (SPEC §6.2) unless seeding/keepSeed retains it.
-	if cfg.Seed.DropAfterPlayback && !keep && !cfg.Seed.Enabled {
+	// keepSeed / global seeding retains it — the seed enforcer disposes of it
+	// once its target is met.
+	if keep || cfg.Seed.Enabled {
+		return
+	}
+	if m.mode == "disk" {
+		// Disk leftover: retire so the space is freed (public keeps a grace
+		// window for a returning viewer; private is deleted immediately).
+		if cfg.Disk.DeleteAfterPlayback {
+			e.retire(m.hash, m.private)
+		}
+		return
+	}
+	// RAM: drop-after-playback frees the in-memory buffer (SPEC §6.2).
+	if cfg.Seed.DropAfterPlayback {
 		_ = e.Drop(m.hash)
 	}
 }

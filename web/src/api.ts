@@ -80,6 +80,12 @@ export interface Settings {
   };
   limits: { maxActiveTorrents: number };
   compressed: { reject: boolean };
+  disk: {
+    maxGB: number;
+    graceMinutes: number;
+    deleteAfterSeed: boolean;
+    deleteAfterPlayback: boolean;
+  };
   noPeersTimeoutSec: number;
   apiToken: string;
 }
