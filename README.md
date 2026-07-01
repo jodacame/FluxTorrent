@@ -261,8 +261,13 @@ FluxTorrent frees space automatically so `/downloads` never fills up. Tune it in
 target** is never touched. **Private torrents** manage their own ratio/time window, so they're
 deleted **immediately** when it's met (no safety window). Everything else is retired: dropped
 from the active set, kept for the safety window (so a returning viewer resumes instantly), then
-deleted. The disk cap is a hard guarantee — under pressure it evicts the oldest content first,
-overriding the safety window.
+deleted. When the **disk limit** is hit, FluxTorrent reconciles against what's actually on
+disk and evicts the **oldest inactive** content first — including untracked leftovers (files a
+client `rem` or a delete-without-files left behind) — overriding the safety window until it's
+back under the cap.
+
+> ⚠️ Because the disk limit reclaims **any** inactive file under the download folder, point
+> `FT_CACHE_PATH` at a folder FluxTorrent owns — **don't share it with other apps' data**.
 
 ### Per-source rules
 
