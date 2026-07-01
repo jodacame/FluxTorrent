@@ -102,6 +102,11 @@ func (s *Server) tsTorrents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, tsObject(*info))
 
 	case "rem":
+		// Destructive: never needed to play, so it requires credentials when auth
+		// is on (a bare player only does add/get/drop).
+		if !s.requireAuth(w, r) {
+			return
+		}
 		// Torrents under a seeding obligation (private auto-seed or a keepSeed
 		// rule) have their own ratio/time targets — a client "remove" must not
 		// delete them; the seed enforcer drops them once the target is met.
@@ -124,7 +129,11 @@ func (s *Server) tsTorrents(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 
 	case "set":
-		// Title/category edits are cosmetic in FluxTorrent; accept as a no-op.
+		// Server-state change: gated behind auth. Title/category edits are
+		// cosmetic in FluxTorrent, so this stays a no-op once authorized.
+		if !s.requireAuth(w, r) {
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 
 	default:
@@ -241,6 +250,11 @@ func (s *Server) tsSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := s.store.Get()
 	if req.Action == "set" && req.Sets != nil {
+		// Changing server settings requires credentials when auth is on; players
+		// only ever read settings (action "get").
+		if !s.requireAuth(w, r) {
+			return
+		}
 		if v, ok := req.Sets["CacheSize"]; ok {
 			if mb, ok := toInt(v); ok && mb > 0 {
 				cfg.Cache.SizeMB = mb / (1 << 20) // TorrServer CacheSize is bytes

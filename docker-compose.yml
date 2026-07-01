@@ -14,7 +14,8 @@ services:
       - FT_LISTEN_PORT=7001
       - FT_CACHE_MODE=ram
       - FT_CACHE_SIZE_MB=1024
-      - FT_API_TOKEN=            # optional bearer token
+      - FT_AUTH_PASSWORD=        # set to require a UI login (empty = open)
+      - FT_API_TOKEN=            # optional bearer token for machine clients
     restart: unless-stopped
     # ultra-light service: small image, low idle RAM, restarts cleanly
     deploy:

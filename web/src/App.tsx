@@ -9,6 +9,7 @@ import {
   Loader2,
   Menu,
   X,
+  LogOut,
 } from "lucide-react";
 import { api, connectEvents, type TorrentInfo } from "./api";
 import { copyText, shortName } from "./util";
@@ -34,7 +35,13 @@ import { StatusBar, type DiskInfo } from "@/components/StatusBar";
 
 export type View = "library" | "rules" | "settings";
 
-export default function App() {
+export default function App({
+  authEnabled = false,
+  onLogout,
+}: {
+  authEnabled?: boolean;
+  onLogout?: () => void;
+} = {}) {
   const { t } = useI18n();
   const [torrents, setTorrents] = useState<TorrentInfo[]>([]);
   const [view, setView] = useState<View>("library");
@@ -246,6 +253,15 @@ export default function App() {
           <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px] shadow-emerald-400" />
           {t("chrome.live")}
         </div>
+
+        {authEnabled && (
+          <ToolbarAction
+            label={t("auth.logout")}
+            icon={LogOut}
+            onClick={() => onLogout?.()}
+            className="ml-auto md:ml-0"
+          />
+        )}
       </div>
 
       {/* main area */}
@@ -329,12 +345,14 @@ function ToolbarAction({
   onClick,
   disabled,
   danger,
+  className,
 }: {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  className?: string;
 }) {
   return (
     <Tooltip>
@@ -342,7 +360,7 @@ function ToolbarAction({
           (a disabled <button> emits no pointer events, so it can't be the
           hover target itself). */}
       <TooltipTrigger asChild>
-        <span className="inline-flex">
+        <span className={`inline-flex ${className ?? ""}`}>
           <Button
             variant="ghost"
             size="icon"

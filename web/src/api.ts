@@ -104,8 +104,16 @@ export interface Rule {
   note: string;
 }
 
+// Notified when an authenticated request comes back 401 (session expired/missing),
+// so the app can drop back to the login screen.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 async function j<T>(res: Response): Promise<T> {
   if (!res.ok) {
+    if (res.status === 401) onUnauthorized?.();
     let msg = `${res.status}`;
     try {
       const body = await res.json();
@@ -116,6 +124,11 @@ async function j<T>(res: Response): Promise<T> {
     throw new Error(msg);
   }
   return res.json() as Promise<T>;
+}
+
+export interface AuthStatus {
+  required: boolean; // a UI password is configured
+  authenticated: boolean; // this session is logged in (or auth is off)
 }
 
 export const api = {
@@ -150,6 +163,25 @@ export const api = {
     ),
   streamUrl: (hash: string, index: number) =>
     `${location.origin}/stream/${hash}/${index}`,
+
+  authStatus: () => fetch("/api/auth").then((r) => j<AuthStatus>(r)),
+  login: async (password: string) => {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) {
+      let msg = `${res.status}`;
+      try {
+        msg = (await res.json()).error || msg;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+  },
+  logout: () => fetch("/api/logout", { method: "POST" }),
 };
 
 export type WsEvent =
