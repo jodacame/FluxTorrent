@@ -102,3 +102,57 @@ func TestDeleteRecordFilesGuards(t *testing.T) {
 		t.Errorf("unsafe name should free 0, got %d", freed)
 	}
 }
+
+// TestDeleteRecordFilesKeepsRecordOnFailure verifies we never orphan: if the
+// files can't be removed (unsafe path here), the record is retained so the files
+// stay tracked instead of vanishing from the listing.
+func TestDeleteRecordFilesKeepsRecordOnFailure(t *testing.T) {
+	e := testEngine(t, t.TempDir())
+	rec := config.TorrentRecord{Hash: "keepme", Name: "../escape", StorageMode: "disk"}
+	if err := e.store.SaveTorrent(rec); err != nil {
+		t.Fatal(err)
+	}
+	e.deleteRecordFiles(rec)
+	if _, ok := e.store.GetTorrent("keepme"); !ok {
+		t.Error("record must be kept when its files could not be removed (no orphaning)")
+	}
+
+	// A clean disk removal, by contrast, drops the record.
+	root := e.store.Get().Cache.Path
+	_ = os.MkdirAll(filepath.Join(root, "gone"), 0o755)
+	rec2 := config.TorrentRecord{Hash: "dropme", Name: "gone", StorageMode: "disk"}
+	_ = e.store.SaveTorrent(rec2)
+	e.deleteRecordFiles(rec2)
+	if _, ok := e.store.GetTorrent("dropme"); ok {
+		t.Error("record should be dropped once its files are removed")
+	}
+}
+
+// TestScanDiskFindsOrphans checks reconciliation: a folder with a record is
+// dated by the record, an orphan folder (no record) is flagged and dated by
+// mtime, and both are eviction candidates while an active torrent's folder would
+// be excluded (covered by the guard, not needing a live torrent here).
+func TestScanDiskFindsOrphans(t *testing.T) {
+	root := t.TempDir()
+	e := testEngine(t, root)
+
+	_ = os.MkdirAll(filepath.Join(root, "tracked"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "tracked", "a.mkv"), make([]byte, 10), 0o644)
+	_ = os.MkdirAll(filepath.Join(root, "orphan"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "orphan", "b.mkv"), make([]byte, 20), 0o644)
+	_ = e.store.SaveTorrent(config.TorrentRecord{Hash: "t1", Name: "tracked", StorageMode: "disk", LastPlayedAt: 42})
+
+	byName := map[string]diskEntry{}
+	for _, d := range e.scanDisk() {
+		byName[d.name] = d
+	}
+	if len(byName) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(byName))
+	}
+	if tr := byName["tracked"]; tr.orphan || tr.hash != "t1" || tr.age != 42 {
+		t.Errorf("tracked entry wrong: %+v", tr)
+	}
+	if or := byName["orphan"]; !or.orphan || or.hash != "" {
+		t.Errorf("orphan entry wrong: %+v", or)
+	}
+}

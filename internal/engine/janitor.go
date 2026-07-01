@@ -79,66 +79,175 @@ func (e *Engine) sweepPending() {
 	}
 }
 
-// enforceDiskCap evicts the oldest inactive pending content until the disk-cache
-// dir is back under Disk.MaxGB. The hard cap overrides the grace window.
+// enforceDiskCap keeps the disk-cache dir under Disk.MaxGB. It reconciles against
+// what is actually on disk — so it reclaims retired content AND untracked orphans
+// (files left behind by a client "rem", a delete-without-files, or a past run) —
+// evicting the oldest inactive item first. Content that is being watched or
+// seeding toward a live target (i.e. an active torrent) is never touched. The
+// hard cap overrides the grace window.
 func (e *Engine) enforceDiskCap() {
 	cfg := e.store.Get()
 	if cfg.Disk.MaxGB <= 0 {
 		return
 	}
 	limit := int64(cfg.Disk.MaxGB) << 30
-	used := dirSize(cfg.Cache.Path)
+	root := filepath.Clean(cfg.Cache.Path)
+	used := dirSize(root)
 	if used <= limit {
 		return
 	}
 
-	recs, _ := e.store.Torrents()
-	cand := make([]config.TorrentRecord, 0, len(recs))
-	for _, r := range recs {
-		if r.PendingDeleteAt == 0 || e.isActive(r.Hash) {
-			continue // only inactive, already-retired content is evictable
-		}
-		cand = append(cand, r)
-	}
-	// Oldest first: by last use, falling back to when it was added.
-	sort.Slice(cand, func(i, j int) bool { return evictKey(cand[i]) < evictKey(cand[j]) })
+	cand := e.scanDisk() // everything on disk that is NOT an active torrent
+	sort.Slice(cand, func(i, j int) bool { return cand[i].age < cand[j].age })
 
-	for _, r := range cand {
+	for _, d := range cand {
 		if used <= limit {
 			break
 		}
-		freed := e.deleteRecordFiles(r)
-		if freed > 0 {
-			used -= freed
+		if e.evictDiskEntry(d) {
+			used -= d.size
+			kind := "retired"
+			if d.orphan {
+				kind = "orphan"
+			}
+			log.Printf("disk cap: evicted %s %s (%s), freed %dMB", kind, shortHash(d.hash), d.name, d.size>>20)
 		}
-		log.Printf("disk cap: evicted %s (%s), freed %dMB", shortHash(r.Hash), r.Name, freed>>20)
 	}
 	if used > limit {
-		// Everything evictable is gone but active/seeding content still exceeds
-		// the cap — surface it rather than silently over-run.
+		// Only active/seeding content remains — surface it rather than silently
+		// over-run the cap.
 		log.Printf("disk cap: still over budget (%dMB > %dMB) — only active/seeding content remains",
 			used>>20, limit>>20)
 	}
 }
 
+// diskEntry is one top-level item in the download folder during reconciliation.
+type diskEntry struct {
+	name   string
+	path   string
+	size   int64
+	age    int64  // unix seconds; smaller = older = evicted first
+	hash   string // owning record's hash, or "" for an orphan
+	orphan bool
+}
+
+// scanDisk lists the download folder's top-level entries that are NOT backed by
+// an active (running) torrent — i.e. retired content and untracked orphans. Each
+// is dated for eviction: known records by last use, orphans by file mtime.
+func (e *Engine) scanDisk() []diskEntry {
+	root := filepath.Clean(e.store.Get().Cache.Path)
+	ents, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	active := e.activeDiskNames()
+	byName := map[string]config.TorrentRecord{}
+	if recs, err := e.store.Torrents(); err == nil {
+		for _, r := range recs {
+			byName[r.Name] = r
+		}
+	}
+	out := make([]diskEntry, 0, len(ents))
+	for _, ent := range ents {
+		name := ent.Name()
+		if active[name] {
+			continue // in use / seeding toward a live target — protected
+		}
+		p := filepath.Join(root, name)
+		d := diskEntry{name: name, path: p, size: dirSize(p)}
+		if r, ok := byName[name]; ok {
+			d.hash, d.age = r.Hash, evictKey(r)
+		} else {
+			d.orphan, d.age = true, entryMtime(p)
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// evictDiskEntry removes one reconciled entry (re-checking it isn't active and
+// stays inside the cache dir) and drops its record if any.
+func (e *Engine) evictDiskEntry(d diskEntry) bool {
+	if e.activeDiskNames()[d.name] {
+		return false // became active between scan and eviction
+	}
+	path, ok := e.safeDataPath(d.name)
+	if !ok {
+		return false
+	}
+	if err := os.RemoveAll(path); err != nil {
+		log.Printf("janitor: remove %s: %v", path, err)
+		return false
+	}
+	if d.hash != "" {
+		_ = e.store.DeleteTorrent(d.hash)
+	}
+	return true
+}
+
+// activeDiskNames is the set of on-disk folder names backed by a running
+// disk-mode torrent (never evicted).
+func (e *Engine) activeDiskNames() map[string]bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	names := make(map[string]bool, len(e.managed))
+	for _, m := range e.managed {
+		if m.mode == "disk" && m.t.Info() != nil {
+			names[m.t.Name()] = true
+		}
+	}
+	return names
+}
+
+// Retire disposes of a torrent from an external control request (e.g. a
+// TorrServer "rem"): it is dropped and its files are cleaned up on the normal
+// schedule (private immediately, public after the grace window) rather than
+// being left behind untracked as an orphan.
+func (e *Engine) Retire(hash string) {
+	private := false
+	if m, ok := e.managedOf(hash); ok {
+		private = m.private
+	}
+	e.retire(hash, private)
+}
+
+// managedOf returns the active managed torrent for hash, if any.
+func (e *Engine) managedOf(hash string) (*managed, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	m, ok := e.managed[hash]
+	return m, ok
+}
+
+// entryMtime returns a path's modification time in unix seconds (0 if missing).
+func entryMtime(path string) int64 {
+	if fi, err := os.Stat(path); err == nil {
+		return fi.ModTime().Unix()
+	}
+	return 0
+}
+
 // deleteRecordFiles removes a record's on-disk files (guarded) and the record
 // itself, returning the bytes freed. Only disk-mode records with a path that
-// stays strictly inside the cache dir are touched.
+// stays strictly inside the cache dir are touched. The record is dropped ONLY
+// once the files are actually gone — so a failed or refused removal keeps the
+// record (and thus the files stay tracked) instead of orphaning them on disk.
 func (e *Engine) deleteRecordFiles(r config.TorrentRecord) int64 {
-	defer func() { _ = e.store.DeleteTorrent(r.Hash) }()
 	if r.StorageMode != "disk" {
+		_ = e.store.DeleteTorrent(r.Hash) // nothing on disk to reconcile
 		return 0
 	}
 	path, ok := e.safeDataPath(r.Name)
 	if !ok {
-		log.Printf("janitor: refusing unsafe delete path for %s (name=%q)", shortHash(r.Hash), r.Name)
+		log.Printf("janitor: refusing unsafe delete path for %s (name=%q) — keeping record", shortHash(r.Hash), r.Name)
 		return 0
 	}
 	size := dirSize(path)
 	if err := os.RemoveAll(path); err != nil {
-		log.Printf("janitor: remove %s: %v", path, err)
+		log.Printf("janitor: remove %s: %v — keeping record", path, err)
 		return 0
 	}
+	_ = e.store.DeleteTorrent(r.Hash) // files gone → drop the record
 	return size
 }
 

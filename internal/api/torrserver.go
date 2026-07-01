@@ -116,7 +116,9 @@ func (s *Server) tsTorrents(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		_ = s.eng.Delete(req.Hash, false)
+		// Retire (not a bare drop) so the files are cleaned on the normal
+		// schedule instead of being left on disk untracked (SPEC §6.1).
+		s.eng.Retire(req.Hash)
 		w.WriteHeader(http.StatusOK)
 
 	case "drop":
