@@ -57,6 +57,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/events", s.hub.serveWS)
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/disk", s.diskInfo)
+	mux.HandleFunc("GET /api/disk/orphans", s.listOrphans)
+	mux.HandleFunc("DELETE /api/disk/orphans", s.cleanOrphans)
 
 	// Authentication (SPEC §7): single-password UI login → session cookie.
 	mux.HandleFunc("GET /api/auth", s.handleAuthStatus)
