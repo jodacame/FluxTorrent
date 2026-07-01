@@ -25,12 +25,13 @@ type Server struct {
 	store *config.Store
 	ui    fs.FS
 	hub   *hub
+	auth  *authState
 	start time.Time
 }
 
 // New builds the API server. ui is the embedded web/dist filesystem (may be nil).
 func New(eng *engine.Engine, store *config.Store, ui fs.FS) *Server {
-	s := &Server{eng: eng, store: store, ui: ui, hub: newHub(), start: time.Now()}
+	s := &Server{eng: eng, store: store, ui: ui, hub: newHub(), auth: newAuthState(), start: time.Now()}
 	go s.hub.run()
 	go s.broadcastLoop()
 	return s
@@ -57,6 +58,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/disk", s.diskInfo)
 
+	// Authentication (SPEC §7): single-password UI login → session cookie.
+	mux.HandleFunc("GET /api/auth", s.handleAuthStatus)
+	mux.HandleFunc("POST /api/login", s.handleLogin)
+	mux.HandleFunc("POST /api/logout", s.handleLogout)
+
 	// Drop-in compatibility for existing clients (point them here unchanged):
 	s.registerTorrServer(mux)   // TorrServer (MatriX) — /echo, /torrents, /stream, /play
 	s.registerTorrent2HTTP(mux) // torrent2http (Kodi/Quasar) — /status, /ls, /files, /get
@@ -72,23 +78,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // --- middleware ---
-
-func (s *Server) withAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := s.store.Get().APIToken
-		// Stream + UI stay open so saved player URLs survive without tokens (SPEC §7).
-		if token == "" || strings.HasPrefix(r.URL.Path, "/stream/") || !strings.HasPrefix(r.URL.Path, "/api/") {
-			next.ServeHTTP(w, r)
-			return
-		}
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer "+token {
-			writeErr(w, http.StatusUnauthorized, "invalid or missing API token")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
+// withAuth lives in auth.go.
 
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

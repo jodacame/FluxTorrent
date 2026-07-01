@@ -166,7 +166,8 @@ services:
     environment:
       - FT_CACHE_MODE=ram        # ram = stream only · disk = save to disk
       - FT_CACHE_SIZE_MB=1024
-      - FT_API_TOKEN=            # optional bearer token
+      - FT_AUTH_PASSWORD=        # set to require a UI login (empty = open)
+      - FT_API_TOKEN=            # optional bearer token for machine clients
     restart: unless-stopped
 ```
 
@@ -206,12 +207,42 @@ Everything is editable in the **Settings** screen (with a built-in help guide) a
 | `FT_CACHE_SIZE_MB` | `1024` | RAM ring-buffer cap |
 | `FT_CACHE_PATH` | `/downloads` | Disk-mode storage root |
 | `FT_READAHEAD_MB` | `64` | Bytes prioritized ahead of playback |
-| `FT_API_TOKEN` | _(empty)_ | Optional `Authorization: Bearer <token>` for `/api/*` |
+| `FT_API_TOKEN` | _(empty)_ | Optional `Authorization: Bearer <token>` for `/api/*` (machine clients) |
+| `FT_AUTH_PASSWORD` | _(empty)_ | Set to require a **password login** on the UI + `/api/*`. Empty = no login |
+| `FT_AUTH_SESSION_HOURS` | `168` | How long a UI login stays valid (session cookie lifetime) |
 | `FT_CONFIG_DIR` | `/config` | Where the bbolt DB lives |
 
 From the UI you can also tune: download/upload speed limits, max active torrents, no-peers
 timeout, seeding defaults, the disk folder, and an **Advanced** section — DHT, connection
 limit, **force header encryption**, IPv6, µTP, and an idle **disconnect timeout**.
+
+### Authentication (`FT_AUTH_PASSWORD`)
+
+By default FluxTorrent is **open** — anyone who can reach the port uses it. Set
+**`FT_AUTH_PASSWORD`** to require a single password to open the UI:
+
+```yaml
+environment:
+  - FT_AUTH_PASSWORD=choose-a-strong-password
+  # - FT_AUTH_SESSION_HOURS=168   # optional: how long a login lasts (default 7 days)
+```
+
+- **Empty (default) → no login**, everything stays open (unchanged behavior).
+- **Set → a login screen gates the UI.** A successful login issues an **HttpOnly,
+  SameSite** session cookie (marked **`Secure`** automatically when served over HTTPS),
+  valid for `FT_AUTH_SESSION_HOURS` (default **168 h / 7 days**). There is **no password
+  recovery** — it's the value of the env var; change the variable and restart to rotate it.
+- Login attempts are **rate-limited per IP** (5 failures → a short lockout) and the
+  password is compared in constant time.
+- **What stays open for players** (they can't log in interactively): `/stream`, `/echo`,
+  and the compat actions a player needs to play — `add` / `get` / `drop` on `/torrents`.
+  The **mutating** compat actions (`rem`, `set`, and `set` on `/settings`) are gated too.
+- **`FT_API_TOKEN`** is independent and for **machine clients**: send
+  `Authorization: Bearer <token>` to reach `/api/*` and the gated actions without a browser
+  session. Either a valid session **or** the bearer token is accepted.
+
+> Going public? Always put it behind **TLS** (a reverse proxy) so the session cookie is
+> `Secure`, and prefer a **VPN** when you can. See [Security](#security).
 
 ### Per-source rules
 
@@ -307,10 +338,19 @@ FluxTorrent is a **self-hosted service meant for a trusted network**. By default
 has **no authentication**, permissive CORS, and binds `0.0.0.0` — anyone who can
 reach the port can control it.
 
-- Set **`FT_API_TOKEN`** to require a bearer token on `/api/*`.
-- The token only guards `/api/*`; **`/stream` and the compatibility endpoints stay
-  open by design** so players work without credentials.
-- To expose it publicly, keep it behind a **VPN or a reverse proxy** (TLS + auth).
+- Set **`FT_AUTH_PASSWORD`** to require a **password login** on the UI. It issues an
+  HttpOnly, SameSite session cookie (default 7 days) and gates the UI + `/api/*`.
+  Login attempts are rate-limited per IP. Leave it empty to keep the UI open.
+- Set **`FT_API_TOKEN`** to also accept an `Authorization: Bearer <token>` on `/api/*`
+  for machine clients (scripts, integrations). Either a valid session or the bearer
+  token is accepted.
+- Both guard the **UI, all `/api/*`, and the mutating player-compat actions**
+  (`rem`/`set` on `/torrents`, `set` on `/settings`). What a player actually needs to
+  play — `add`/`get`/`drop`, `/stream`, `/echo` — **stays open by design** so external
+  players (Kodi/Stremio/VLC) work without credentials. Stream URLs require the torrent
+  infohash, which is effectively unguessable.
+- To expose it publicly, **always add TLS** (a reverse proxy) and prefer keeping it
+  behind a **VPN** when you can.
 
 Full details and how to report vulnerabilities: **[SECURITY.md](SECURITY.md)**.
 
